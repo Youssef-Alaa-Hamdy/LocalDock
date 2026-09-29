@@ -244,3 +244,63 @@
     transition: none !important;
   }
 }
+
+/* ---------- Mobile bottom sheets ---------- */
+/* On phones every Dialog becomes a bottom sheet: full-width, anchored to the
+   bottom edge with a grabber, sliding up — the professional mobile pattern.
+   Scoped below Tailwind's `sm` breakpoint; desktop dialogs stay centered. */
+@keyframes ld-sheet-in {
+  from { opacity: 0; transform: translateY(28px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes ld-sheet-out {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(24px); }
+}
+
+@media (max-width: 639.98px) {
+  [data-slot="dialog-content"] {
+    top: auto !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    translate: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 92dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-radius: 1.25rem 1.25rem 0 0 !important;
+    border-bottom-width: 0 !important;
+    padding: 1.25rem !important;
+    padding-bottom: calc(1.25rem + env(safe-area-inset-bottom)) !important;
+    animation: ld-sheet-in 0.26s cubic-bezier(0.2, 0.8, 0.3, 1) !important;
+  }
+  [data-slot="dialog-content"][data-state="closed"] {
+    animation: ld-sheet-out 0.2s ease-in forwards !important;
+  }
+  /* grabber bar */
+  [data-slot="dialog-content"]::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    translate: -50% 0;
+    width: 36px;
+    height: 4px;
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--muted-foreground) 30%, transparent);
+    pointer-events: none;
+  }
+  /* room for the grabber so it never overlaps the title */
+  [data-slot="dialog-content"] > [data-slot="dialog-header"]:first-child {
+    padding-top: 0.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="dialog-content"],
+  [data-slot="dialog-content"][data-state="closed"] {
+    animation: none !important;
+  }
+}

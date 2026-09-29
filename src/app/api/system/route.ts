@@ -6,6 +6,7 @@ import {
   listDevices,
   listShares,
   networkInterfaces,
+  pickPrimaryLanIp,
   VERSION,
   STARTED_AT,
 } from "@/lib/localdock/registry";
@@ -42,6 +43,8 @@ export async function GET(req: Request) {
     platform: `${os.type()} ${os.release()}`,
     hostname: os.hostname(),
     network: networkInterfaces(),
+    /** Best-guess primary LAN IPv4 — kept fresh for share links / QR codes. */
+    lanIp: pickPrimaryLanIp(),
     storage,
   });
 }

@@ -1,7 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useTransfers, selectActiveCount } from "@/lib/localdock/client/transfer-engine";
+import {
+  useTransfers,
+  selectActiveCount,
+  selectDockItems,
+} from "@/lib/localdock/client/transfer-engine";
 import { useNav } from "./nav";
 import { TransferRow } from "./transfer-row";
 import { AnimatePresence, motion } from "framer-motion";
@@ -20,10 +24,9 @@ export function TransferDock() {
   const active = items.filter(
     (i) => i.status === "active" || i.status === "queued"
   );
-  const attention = items.filter(
-    (i) => i.status === "failed" || (i.status === "paused" && i.kind === "upload" && !i.file)
-  );
-  const visibleItems = [...active, ...attention];
+  // One shared definition of "dock-worthy" items — the Files tab uses the
+  // same selector to stack the upload toolbar above this dock without overlaps.
+  const visibleItems = selectDockItems(items);
   if (visibleItems.length === 0) return null;
 
   const speed = active.reduce((acc, i) => acc + i.speedBps, 0);

@@ -21,5 +21,26 @@ export async function GET(req: Request, ctx: Ctx) {
       return jsonError(403, "permission", "The server cannot read this folder.");
     return jsonError(400, "bad-path", "Invalid folder path.");
   }
+
+  // Cheap change-detection mode: the file browser polls this every few seconds
+  // (tiny payload) and only re-fetches the full listing when the fingerprint
+  // moves — so files added from other devices appear live.
+  if (url.searchParams.get("summary") === "1") {
+    let size = 0;
+    let latest = 0;
+    for (const e of result.entries) {
+      size += e.size;
+      if (e.modifiedAt > latest) latest = e.modifiedAt;
+    }
+    return jsonOk({
+      path: dir,
+      summary: {
+        count: result.entries.length,
+        size,
+        latest: Math.round(latest),
+      },
+    });
+  }
+
   return jsonOk({ path: dir, entries: result.entries });
 }

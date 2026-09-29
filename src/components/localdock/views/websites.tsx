@@ -7,8 +7,10 @@ import { FolderBrowserDialog } from "../folder-browser-dialog";
 import { QrDialog } from "../qr-dialog";
 import { NativePickCard } from "../primitives";
 import { desktopMode, pickNativeFolder } from "@/lib/localdock/client/desktop";
+import { Api } from "@/lib/localdock/client/api";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/localdock/client/format";
+import { buildLanUrl } from "@/lib/localdock/client/lan";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
@@ -81,7 +83,7 @@ export function WebsitesView() {
   };
 
   const siteUrl = (site: Website) =>
-    typeof window !== "undefined" ? `${location.origin}/sites/${site.slug}` : `/sites/${site.slug}`;
+    buildLanUrl(`/sites/${site.slug}`);
 
   const friendly = (site: Website) => `${site.slug}.localdock.local`;
 

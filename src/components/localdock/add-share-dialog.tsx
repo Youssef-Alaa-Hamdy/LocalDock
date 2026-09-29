@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { QrDialog } from "./qr-dialog";
+import { buildLanUrl } from "@/lib/localdock/client/lan";
 import type { Share } from "@/lib/localdock/types";
 
 interface ShortcutItem {
@@ -387,19 +388,4 @@ export function AddShareDialog({
       )}
     </>
   );
-}
-
-/**
- * Build a full URL using the machine LAN IP (injected via window.__LOCALDOCK_LAN_IP__)
- * so QR codes and share links work from other devices on the local network.
- */
-function buildLanUrl(p: string): string {
-  if (typeof window === "undefined") return p;
-  const lanIp = (window as { __LOCALDOCK_LAN_IP__?: string }).__LOCALDOCK_LAN_IP__;
-  if (lanIp) {
-    const w = window.location;
-    const portStr = w.port && w.port !== "80" && w.port !== "443" ? ":" + w.port : "";
-    return w.protocol + "//" + lanIp + portStr + p;
-  }
-  return window.location.origin + p;
 }

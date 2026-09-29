@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { setOwnerKey, Api, loadDeviceToken, saveDeviceToken, clearDeviceToken } from "@/lib/localdock/client/api";
+import { setLanIp } from "@/lib/localdock/client/lan";
 import { isDesktop } from "@/lib/localdock/client/desktop";
 import { transfers } from "@/lib/localdock/client/transfer-engine";
 import { AppShell } from "./app-shell";
@@ -52,7 +53,7 @@ export default function LocalDockApp() {
         !!(info.desktop && isDesktop());
       // Inject the real LAN IP so QR codes / share links use the reachable address.
       if (info.lanIp) {
-        (window as { __LOCALDOCK_LAN_IP__?: string }).__LOCALDOCK_LAN_IP__ = info.lanIp;
+        setLanIp(info.lanIp);
       }
       if (!info.onboarded) {
         setMode("onboarding");

@@ -166,7 +166,7 @@ export function FolderBrowserDialog({
             </div>
           </div>
 
-          <div className="ld-scroll max-h-64 min-h-44 overflow-y-auto p-2">
+          <div className="ld-scroll max-h-[38vh] min-h-44 overflow-y-auto p-2 sm:max-h-64">
             {visible.length === 0 && !loading ? (
               <div className="flex flex-col items-center gap-2 py-10 text-center">
                 <FolderOpen className="size-7 text-muted-foreground/50" />

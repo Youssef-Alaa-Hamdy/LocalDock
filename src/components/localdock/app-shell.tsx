@@ -4,6 +4,7 @@ import { useSyncExternalStore, useEffect } from "react";
 import { useTheme } from "next-themes";
 import { useNav, type ViewKey } from "./nav";
 import { useSystem, useRefresh } from "./data-hooks";
+import { setLanIp } from "@/lib/localdock/client/lan";
 import { useTransfers, selectActiveCount } from "@/lib/localdock/client/transfer-engine";
 import { StatusDot, LogoMark } from "./primitives";
 import { TransferDock } from "./transfer-dock";
@@ -61,12 +62,21 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
   const online = system.data?.online ?? false;
   const refresh = useRefresh();
 
-  // keep server-side activity fresh when transfers complete
+  // keep server-side activity + share stats fresh when transfers complete
   useEffect(() => {
     const completed = items.filter((i) => i.status === "completed").length;
-    if (completed > 0) refresh.refreshActivity();
+    if (completed > 0) {
+      refresh.refreshActivity();
+      refresh.refreshShares();
+    }
      
   }, [items.reduce((acc, i) => acc + (i.status === "completed" ? 1 : 0), 0)]);
+
+  // Keep the injected LAN IP fresh from the /api/system poll (every 4s), so
+  // share links / QR codes survive DHCP address changes mid-session.
+  useEffect(() => {
+    if (system.data?.lanIp) setLanIp(system.data.lanIp);
+  }, [system.data?.lanIp]);
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -196,15 +206,26 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
                 </div>
               )}
               {mounted && (
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="size-9 rounded-xl lg:hidden"
-                  onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                  aria-label="Toggle theme"
-                >
-                  {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-                </Button>
+                <>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="size-9 rounded-xl lg:hidden"
+                    onClick={() => go("settings")}
+                    aria-label="Settings"
+                  >
+                    <Settings className="size-4" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="size-9 rounded-xl lg:hidden"
+                    onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                    aria-label="Toggle theme"
+                  >
+                    {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+                  </Button>
+                </>
               )}
             </div>
           </div>

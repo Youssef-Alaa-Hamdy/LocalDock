@@ -103,6 +103,8 @@ export interface SystemStatus {
   platform: string;
   hostname: string;
   network: { name: string; address: string }[];
+  /** Primary LAN IPv4 chosen server-side (same scoring as bootstrap). */
+  lanIp?: string | null;
   storage: { freeBytes: number; totalBytes: number };
 }
 
@@ -185,4 +187,6 @@ export interface TransferItem {
   controller?: AbortController;
   file?: File;
   hashHex?: string;
+  /** Uploads restored from a previous page load: the file must be re-picked. */
+  needsFile?: boolean;
 }

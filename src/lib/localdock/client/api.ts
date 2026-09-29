@@ -155,6 +155,11 @@ export const Api = {
     api<{ path: string; entries: FileEntry[] }>(
       `/api/shares/${shareId}/browse?path=${encodeURIComponent(path)}`
     ),
+  /** Cheap directory fingerprint for live-refresh polling. */
+  browseSummary: (shareId: string, path: string) =>
+    api<{ path: string; summary: { count: number; size: number; latest: number } }>(
+      `/api/shares/${shareId}/browse?path=${encodeURIComponent(path)}&summary=1`
+    ),
   search: (shareId: string, q: string, path = "") =>
     api<{ results: FileEntry[] }>(
       `/api/shares/${shareId}/search?q=${encodeURIComponent(q)}&path=${encodeURIComponent(path)}`

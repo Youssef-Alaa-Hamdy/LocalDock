@@ -206,7 +206,7 @@ export async function streamFileResponse(
     return jsonError(400, "not-a-file", "The requested path is not a file.");
   }
   const size = stat.size;
-  const range = parseRange(opts.rangeHeader, size);
+  const range = parseRange(opts.rangeHeader ?? null, size);
 
   const headers = new Headers();
   headers.set("Content-Type", opts.mime);

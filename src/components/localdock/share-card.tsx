@@ -7,6 +7,7 @@ import { useRefresh } from "./data-hooks";
 import { useNav } from "./nav";
 import { QrDialog } from "./qr-dialog";
 import { formatBytes } from "@/lib/localdock/client/format";
+import { buildLanUrl } from "@/lib/localdock/client/lan";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,7 +54,9 @@ export function ShareCard({ share, className }: { share: Share; className?: stri
   const [copied, setCopied] = useState(false);
   const openFiles = useNav((s) => s.openFiles);
 
-  const link = typeof window !== "undefined" ? `${location.origin}/?s=${share.slug}` : "";
+  // Always hand out the LAN-reachable address (never 127.0.0.1 — the desktop
+  // webview runs on loopback, but phones need the machine's real IP).
+  const link = buildLanUrl(`/?s=${share.slug}`);
 
   const copy = async () => {
     try {

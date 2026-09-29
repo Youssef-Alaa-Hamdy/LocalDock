@@ -16,7 +16,7 @@
  */
 import { create } from "zustand";
 import type { TransferItem, TransferStatus } from "../types";
-import { Api, api, getOwnerKey, makeApiError } from "./api";
+import { Api, getOwnerKey, getDeviceToken, makeApiError } from "./api";
 
 const CHUNK_SIZE = 4 * 1024 * 1024;
 const MAX_PARALLEL = 2;
@@ -61,6 +61,30 @@ export const useTransfers = create<TransfersState>((set) => ({
   remove: (id) => set((s) => ({ items: s.items.filter((it) => it.id !== id) })),
   setConnected: (v) => set({ connected: v }),
 }));
+
+/**
+ * Auth headers for raw (non-Api) transfer fetches. Both identities are sent:
+ * the owner key covers the console, the device token covers paired phones —
+ * without it, chunk PUTs from a paired device used to 403 mid-transfer.
+ */
+function transferHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    "X-LocalDock-Owner": getOwnerKey() ?? "",
+    "X-LocalDock-Device": getDeviceToken() ?? "",
+    ...extra,
+  };
+}
+
+/** Items the floating TransferDock should stay visible for. */
+export function selectDockItems(items: TransferItem[]): TransferItem[] {
+  return items.filter(
+    (i) =>
+      i.status === "active" ||
+      i.status === "queued" ||
+      i.status === "failed" ||
+      (i.status === "paused" && i.kind === "upload" && !i.file)
+  );
+}
 
 function uid(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -142,6 +166,31 @@ class TransferEngine {
   private running = 0;
   private speedometers = new Map<string, Speedometer>();
   private booted = false;
+  private uploadCompletedListeners = new Set<
+    (info: { shareId: string; dirPath: string; name: string }) => void
+  >();
+
+  /**
+   * Subscribe to upload completions — used by the file browser to refresh the
+   * open folder the moment a file lands on disk (no manual re-entry needed).
+   * Returns an unsubscribe function.
+   */
+  onUploadCompleted(
+    listener: (info: { shareId: string; dirPath: string; name: string }) => void
+  ): () => void {
+    this.uploadCompletedListeners.add(listener);
+    return () => this.uploadCompletedListeners.delete(listener);
+  }
+
+  private notifyUploadCompleted(info: { shareId: string; dirPath: string; name: string }) {
+    for (const l of this.uploadCompletedListeners) {
+      try {
+        l(info);
+      } catch {
+        /* listener errors must never break the queue */
+      }
+    }
+  }
 
   boot() {
     if (this.booted || typeof window === "undefined") return;
@@ -329,7 +378,7 @@ class TransferEngine {
       });
   }
 
-  private handleFailure(id: string, err: Error & { code?: string }) {
+  private handleFailure(id: string, err: Error & { code?: string; friendly?: string }) {
     const item = this.items.find((i) => i.id === id);
     if (!item) return;
     const state = useTransfers.getState();
@@ -437,10 +486,7 @@ class TransferEngine {
           {
             method: "PUT",
             body: blob,
-            headers: {
-              "X-LocalDock-Owner": getOwnerKey() ?? "",
-              "Content-Type": "application/octet-stream",
-            },
+            headers: transferHeaders({ "Content-Type": "application/octet-stream" }),
             signal: item.controller?.signal,
           }
         );
@@ -479,6 +525,23 @@ class TransferEngine {
         return; // loop will resend missing chunks
       }
       const info = res.upload;
+      if (!info) {
+        // Server confirmed completion but sent no session info — treat as done.
+        useTransfers.getState().patch(item.id, {
+          status: "completed",
+          transferred: item.size,
+          speedBps: 0,
+          etaSec: null,
+          completedAt: Date.now(),
+        });
+        this.persist();
+        this.notifyUploadCompleted({
+          shareId: item.shareId,
+          dirPath: item.path,
+          name: item.name,
+        });
+        return;
+      }
       useTransfers.getState().patch(item.id, {
         status: "completed",
         transferred: item.size,
@@ -489,6 +552,12 @@ class TransferEngine {
         hashHex: info.sha256,
       });
       this.persist();
+      // Tell the UI (file browser, etc.) that a file just landed on disk.
+      this.notifyUploadCompleted({
+        shareId: item.shareId,
+        dirPath: item.path,
+        name: info.finalName,
+      });
     });
   }
 
@@ -559,10 +628,7 @@ class TransferEngine {
       await this.withRetry(item, async () => {
         const url = `/api/shares/${item.shareId}/download?path=${encodeURIComponent(item.path)}`;
         const res = await fetch(url, {
-          headers: {
-            Range: `bytes=${offset}-${end}`,
-            "X-LocalDock-Owner": getOwnerKey() ?? "",
-          },
+          headers: transferHeaders({ Range: `bytes=${offset}-${end}` }),
           signal: item.controller?.signal,
         });
         if (!res.ok && res.status !== 206) {
@@ -609,10 +675,9 @@ class TransferEngine {
 
   private async downloadToBlob(item: TransferItem, speedo: Speedometer) {
     const url = `/api/shares/${item.shareId}/download?path=${encodeURIComponent(item.path)}`;
-    const headers: Record<string, string> = {
-      "X-LocalDock-Owner": getOwnerKey() ?? "",
-    };
-    if (item.transferred > 0) headers["Range"] = `bytes=${item.transferred}-`;
+    const headers = transferHeaders(
+      item.transferred > 0 ? { Range: `bytes=${item.transferred}-` } : {}
+    );
 
     const res = await fetch(url, {
       headers,

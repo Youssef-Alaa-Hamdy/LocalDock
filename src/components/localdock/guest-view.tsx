@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { FileEntry } from "@/lib/localdock/types";
 import { Api, api, getDeviceToken, makeApiError } from "@/lib/localdock/client/api";
+import { buildLanUrl } from "@/lib/localdock/client/lan";
 import { transfers } from "@/lib/localdock/client/transfer-engine";
 import { LogoMark, StatusDot } from "./primitives";
 import { FileBrowser, FileIcon } from "./file-browser";
@@ -168,7 +169,7 @@ export function PairClaimView({
       setState({
         kind: "found",
         serverName: "your computer",
-        baseUrl: location.origin,
+        baseUrl: buildLanUrl("/"),
       });
     } catch {
       setState({ kind: "invalid", message: "This pairing link is incomplete." });

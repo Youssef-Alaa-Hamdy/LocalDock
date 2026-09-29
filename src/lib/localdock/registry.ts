@@ -375,7 +375,7 @@ export async function logActivity(
       type,
       message,
       at: Date.now(),
-      meta: meta ?? null,
+      meta: meta ?? undefined,
     });
     if (entries.length > ACTIVITY_MAX) entries.length = ACTIVITY_MAX;
     await writeJson(FILES.activity, entries);
@@ -444,6 +444,28 @@ export function networkInterfaces(): { name: string; address: string }[] {
     }
   }
   return out;
+}
+
+/**
+ * Pick the LAN IPv4 most likely to be reachable by phones on the Wi-Fi.
+ * Scoring prefers typical home/office ranges and demotes virtual adapters
+ * (Docker / WSL / Hyper-V usually hand out 172.x addresses), so QR codes and
+ * share links don't end up pointing at a container bridge.
+ */
+export function pickPrimaryLanIp(): string | null {
+  const nics = networkInterfaces();
+  if (nics.length === 0) return null;
+  const score = (ip: string): number => {
+    if (/^192\.168\./.test(ip)) return 4; // home/office Wi-Fi — most likely target
+    if (/^10\./.test(ip)) return 3; // corporate / hotspot ranges
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return 1; // often virtual (Docker/WSL)
+    return 2; // other private/unusual — usable fallback
+  };
+  let best = nics[0];
+  for (const nic of nics) {
+    if (score(nic.address) > score(best.address)) best = nic;
+  }
+  return best.address;
 }
 
 export function dataDirExists(): boolean {

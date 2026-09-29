@@ -1,5 +1,5 @@
 import { ensureSeeded } from "@/lib/localdock/seed";
-import { getSettings, networkInterfaces, serverBaseUrlFrom, VERSION } from "@/lib/localdock/registry";
+import { getSettings, pickPrimaryLanIp, serverBaseUrlFrom, VERSION } from "@/lib/localdock/registry";
 import { jsonOk } from "@/lib/localdock/files";
 import { DESKTOP_MODE } from "@/lib/localdock/store";
 
@@ -14,8 +14,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   await ensureSeeded();
   const settings = getSettings();
-  const nics = networkInterfaces();
-  const lanIp = nics.length > 0 ? nics[0].address : null;
+  const lanIp = pickPrimaryLanIp();
   return jsonOk({
     version: VERSION,
     serverId: settings.serverId,

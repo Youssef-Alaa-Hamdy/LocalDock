@@ -2,7 +2,7 @@ import { jsonError, jsonOk } from "@/lib/localdock/files";
 import {
   createPairingCode,
   getSettings,
-  networkInterfaces,
+  pickPrimaryLanIp,
   serverBaseUrlFrom,
   VERSION,
 } from "@/lib/localdock/registry";
@@ -27,8 +27,7 @@ export async function POST(req: Request) {
   // Fall back to the request host if none are found (e.g. development).
   const reqUrl = new URL(req.url);
   const port = reqUrl.port || (reqUrl.protocol === "https:" ? "443" : "80");
-  const nics = networkInterfaces();
-  const lanIp = nics.length > 0 ? nics[0].address : null;
+  const lanIp = pickPrimaryLanIp();
   const lanBase = lanIp
     ? `${reqUrl.protocol}//${lanIp}${port && port !== "80" && port !== "443" ? `:${port}` : ""}`
     : baseUrl;

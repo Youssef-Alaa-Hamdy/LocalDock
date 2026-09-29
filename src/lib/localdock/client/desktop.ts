@@ -17,14 +17,14 @@ type TauriInvoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T
 
 function internals(): unknown | null {
   if (typeof window === "undefined") return null;
-  const w = window as Record<string, unknown>;
+  const w = window as unknown as Record<string, unknown>;
   return w.__TAURI_INTERNALS__ ?? w.__TAURI__ ?? null;
 }
 
 /** True when the UI is running inside the Tauri desktop shell. */
 export function isDesktop(): boolean {
   if (typeof window === "undefined") return false;
-  const w = window as Record<string, unknown>;
+  const w = window as unknown as Record<string, unknown>;
   return !!(w.__TAURI_INTERNALS__ || w.__TAURI__ || w.__LOCALDOCK_DESKTOP__);
 }
 
@@ -50,7 +50,7 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
  */
 export async function pickNativeFolder(title: string): Promise<string | null> {
   if (typeof window === "undefined") return null;
-  const w = window as Record<string, unknown>;
+  const w = window as unknown as Record<string, unknown>;
 
   if (isDesktop()) {
     try {

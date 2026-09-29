@@ -84,13 +84,13 @@ export function FilesView() {
         </Button>
       </div>
 
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Badge variant="outline" className="rounded-lg font-semibold">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <Badge variant="outline" className="shrink-0 rounded-lg font-semibold">
           {active.access === "read" ? "Read only" : "Read & write"}
         </Badge>
-        <span>
-          You're browsing “{active.name}” on your computer — changes appear instantly for all
-          devices.
+        <span className="min-w-0">
+          You're browsing <span className="truncate font-medium text-foreground">“{active.name}”</span> on
+          your computer — changes appear instantly for all devices.
         </span>
       </div>
 

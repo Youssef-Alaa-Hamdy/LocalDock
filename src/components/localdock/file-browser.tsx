@@ -3,8 +3,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FileEntry } from "@/lib/localdock/types";
 import { Api } from "@/lib/localdock/client/api";
-import { transfers, useTransfers } from "@/lib/localdock/client/transfer-engine";
-import { formatBytes, formatDateTime } from "@/lib/localdock/client/format";
+import {
+  transfers,
+  useTransfers,
+  selectDockItems,
+} from "@/lib/localdock/client/transfer-engine";
+import {
+  formatBytes,
+  formatDateTime,
+  formatEta,
+  formatSpeed,
+  pct,
+} from "@/lib/localdock/client/format";
 import { useRefresh } from "./data-hooks";
 import { PreviewModal } from "./preview-modal";
 import { cn } from "@/lib/utils";
@@ -38,6 +48,7 @@ import {
 import { Label } from "@/components/ui/label";
 import {
   ArrowDownToLine,
+  ArrowUpFromLine,
   Check,
   ChevronRight,
   Copy,
@@ -68,10 +79,22 @@ import {
   CalendarArrowUp,
 } from "lucide-react";
 import { toast } from "sonner";
+import type { LucideIcon } from "lucide-react";
 
 type SortKey = "name" | "size" | "modified";
 
-const CATEGORY_ICONS: Record<string, { icon: typeof FileIcon; tone: string }> = {
+/** Directory fingerprint used for live refresh (count + total size + newest mtime). */
+function fingerprintOf(entries: FileEntry[]): string {
+  let size = 0;
+  let latest = 0;
+  for (const e of entries) {
+    size += e.size;
+    if (e.modifiedAt > latest) latest = e.modifiedAt;
+  }
+  return `${entries.length}:${size}:${Math.round(latest)}`;
+}
+
+const CATEGORY_ICONS: Record<string, { icon: LucideIcon; tone: string }> = {
   image: { icon: ImageIcon, tone: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300" },
   video: { icon: FileVideo, tone: "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300" },
   audio: { icon: FileAudio, tone: "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300" },
@@ -137,18 +160,32 @@ export function FileBrowser({
   const uploadRef = useRef<HTMLInputElement>(null);
   const refresh = useRefresh();
 
+  /* ---------- live refresh state ---------- */
+  const fingerprintRef = useRef<string>("");
+  const pathRef = useRef(path);
+  const shareIdRef = useRef(shareId);
+  useEffect(() => {
+    pathRef.current = path;
+  }, [path]);
+  useEffect(() => {
+    shareIdRef.current = shareId;
+  }, [shareId]);
+
   const load = useCallback(
-    async (dir: string) => {
-      setLoading(true);
+    async (dir: string, silent = false) => {
+      if (!silent) setLoading(true);
       setError(null);
       try {
         const res = await Api.browse(shareId, dir);
         setEntries(res.entries);
+        fingerprintRef.current = fingerprintOf(res.entries);
       } catch (e) {
-        setError((e as Error).message);
-        setEntries([]);
+        if (!silent) {
+          setError((e as Error).message);
+          setEntries([]);
+        }
       } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
     },
     [shareId]
@@ -159,6 +196,56 @@ export function FileBrowser({
     setSelected(new Set());
     void load(initialPath);
   }, [shareId, initialPath, load]);
+
+  /*
+   * Live folder watching:
+   *  - Poll a tiny directory fingerprint every 3s (payload is ~100 bytes) and
+   *    re-fetch the full listing only when something changed on disk — so
+   *    files added from OTHER devices appear without leaving the folder.
+   *  - Additionally, the transfer engine pings this browser the moment a
+   *    local upload completes, for a truly instant refresh.
+   *  - Polling pauses while the tab is hidden or a server search is active.
+   */
+  const searchActive = searchResults !== null;
+  useEffect(() => {
+    fingerprintRef.current = ""; // moving to another folder resets the baseline
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled || document.visibilityState !== "visible" || searchActive) return;
+      try {
+        const res = await Api.browseSummary(shareIdRef.current, pathRef.current);
+        if (cancelled) return;
+        const fp = `${res.summary.count}:${res.summary.size}:${res.summary.latest}`;
+        if (fingerprintRef.current && fp !== fingerprintRef.current) {
+          fingerprintRef.current = fp;
+          await load(pathRef.current, true); // silent refresh — no spinner flicker
+        } else {
+          fingerprintRef.current = fp;
+        }
+      } catch {
+        /* server busy or unreachable — retry on the next tick */
+      }
+    };
+    const t = setInterval(() => void tick(), 3000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [shareId, path, searchActive, load]);
+
+  /* Instant refresh when an upload lands in the folder being viewed. */
+  useEffect(() => {
+    return transfers.onUploadCompleted(({ shareId: sid, dirPath }) => {
+      if (sid === shareIdRef.current && dirPath === pathRef.current) {
+        void load(pathRef.current, true);
+      }
+    });
+  }, [load]);
 
   const runServerSearch = useCallback(
     async (q: string) => {
@@ -321,9 +408,24 @@ export function FileBrowser({
 
   const selectedEntries = visible.filter((e) => selected.has(e.name));
   const totalSize = visible.reduce((a, e) => a + e.size, 0);
-  const activeItems = useTransfers((s) => s.items).filter(
-    (i) => i.status === "active" || i.status === "queued"
-  );
+  const items = useTransfers((s) => s.items);
+  const dockItems = selectDockItems(items);
+  const dockVisible = dockItems.length > 0;
+
+  /** Live uploads for this share — current folder first, others after. */
+  const activeUploads = useMemo(() => {
+    const ups = items.filter(
+      (i) => i.kind === "upload" && (i.status === "active" || i.status === "queued")
+    );
+    return [
+      ...ups.filter((i) => i.shareId === shareId && i.path === path),
+      ...ups.filter((i) => i.shareId === shareId && i.path !== path),
+      ...ups.filter((i) => i.shareId !== shareId),
+    ];
+  }, [items, shareId, path]);
+  const uploadsTotal = activeUploads.reduce((a, i) => a + i.size, 0);
+  const uploadsDone = activeUploads.reduce((a, i) => a + i.transferred, 0);
+  const uploadsPct = pct(uploadsDone, uploadsTotal);
 
   return (
     <div
@@ -456,10 +558,104 @@ export function FileBrowser({
         {!writable && (
           <span className="rounded-full bg-muted px-2 py-0.5 font-semibold">Read only</span>
         )}
+        {!searchActive && (
+          <span
+            className="ml-auto flex shrink-0 items-center gap-1.5"
+            title="This folder refreshes automatically"
+          >
+            <span className="size-1.5 rounded-full bg-success dot-pulse" />
+            Live
+          </span>
+        )}
       </div>
 
-      {/* Content */}
-      <div className={cn("ld-scroll mt-3 flex-1 overflow-y-auto pb-24", embedded ? "" : "max-h-[62vh]")}>
+      {/* Live upload tray — per-file progress, speed & ETA, professional-grade */}
+      {activeUploads.length > 0 && (
+        <div className="rise mt-2 overflow-hidden rounded-2xl border border-primary/25 bg-accent/30">
+          <div className="flex items-center gap-2 px-3.5 pb-1 pt-2.5">
+            <ArrowUpFromLine className="size-3.5 shrink-0 text-primary" />
+            <p className="min-w-0 truncate text-xs font-semibold">
+              Uploading {activeUploads.length} file{activeUploads.length === 1 ? "" : "s"}
+              {" "}
+              <span className="font-normal text-muted-foreground">
+                to {activeUploads[0].shareId === shareId ? "this shared folder" : activeUploads[0].shareName}
+              </span>
+            </p>
+            <span className="tnum ml-auto shrink-0 text-xs font-bold text-primary">
+              {Math.round(uploadsPct)}%
+            </span>
+          </div>
+          <div className="relative mx-3.5 mb-1 h-1 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full bg-primary transition-[width] duration-300"
+              style={{ width: `${uploadsPct}%` }}
+            />
+          </div>
+          <div className="space-y-2.5 px-3.5 pb-3 pt-1.5">
+            {activeUploads.slice(0, 4).map((i) => {
+              const p = pct(i.transferred, i.size);
+              const inThisFolder = i.shareId === shareId && i.path === path;
+              return (
+                <div key={i.id}>
+                  <div className="flex min-w-0 items-center gap-2 text-xs">
+                    {i.status === "active" ? (
+                      <Loader2 className="size-3 shrink-0 animate-spin text-primary" />
+                    ) : (
+                      <span className="size-1.5 shrink-0 rounded-full bg-muted-foreground/50" />
+                    )}
+                    <span className="min-w-0 truncate font-medium">{i.name}</span>
+                    {!inThisFolder && (
+                      <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        {i.shareId === shareId ? `/${i.path}` : i.shareName}
+                      </span>
+                    )}
+                    <span className="tnum ml-auto shrink-0 font-semibold">
+                      {Math.round(p)}%
+                      {i.status === "active" && i.speedBps > 0 && (
+                        <span className="ml-1.5 font-normal text-muted-foreground">
+                          {formatSpeed(i.speedBps)}
+                        </span>
+                      )}
+                    </span>
+                    <button
+                      className="shrink-0 rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      onClick={() => void transfers.cancel(i.id)}
+                      aria-label={`Cancel upload of ${i.name}`}
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                  <Progress
+                    value={p}
+                    className="mt-1 h-1 overflow-hidden rounded-full"
+                    aria-label={`${i.name} upload progress ${Math.round(p)}%`}
+                  />
+                  <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                    <span className="tnum">
+                      {formatBytes(i.transferred)} / {formatBytes(i.size)}
+                    </span>
+                    <span>
+                      {i.status === "queued"
+                        ? "Waiting in queue…"
+                        : i.etaSec !== null
+                          ? `ETA ${formatEta(i.etaSec)}`
+                          : ""}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+            {activeUploads.length > 4 && (
+              <p className="text-[11px] font-medium text-muted-foreground">
+                + {activeUploads.length - 4} more — open the Transfer Center for details
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Content — full page scroll on phones, capped nested scroller on desktop */}
+      <div className={cn("ld-scroll mt-3 flex-1 overflow-y-auto pb-24", embedded ? "" : "lg:max-h-[62vh]")}>
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -544,28 +740,38 @@ export function FileBrowser({
         )}
       </div>
 
-      {/* Toolbar (bottom): upload + new folder */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-24 z-30 flex justify-center px-4 lg:bottom-6 lg:left-60 lg:justify-end lg:pr-10">
-        <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border border-border bg-card/95 p-1.5 shadow-pop backdrop-blur-xl">
-          {writable && (
-            <>
-              <Button size="sm" className="h-9 rounded-xl" onClick={() => uploadRef.current?.click()}>
-                <Upload className="size-4" />
-                Upload
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-9 rounded-xl"
-                onClick={() => setNewFolderOpen(true)}
-              >
-                <FolderPlus className="size-4" />
-                New folder
-              </Button>
-            </>
+      {/* Toolbar (bottom): upload + new folder.
+          Hidden while a multi-selection is active (the selection bar owns the
+          bottom area), and stacked above the TransferDock whenever that dock
+          is visible — no overlaps on phones or desktop. */}
+      {selected.size === 0 && (
+        <div
+          className={cn(
+            "pointer-events-none fixed left-0 right-0 z-30 flex justify-center px-4 lg:left-auto lg:right-10",
+            dockVisible ? "bottom-40 lg:bottom-24" : "bottom-24 lg:bottom-6"
           )}
+        >
+          <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border border-border bg-card/95 p-1.5 shadow-pop backdrop-blur-xl">
+            {writable && (
+              <>
+                <Button size="sm" className="h-9 rounded-xl" onClick={() => uploadRef.current?.click()}>
+                  <Upload className="size-4" />
+                  Upload
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-9 rounded-xl"
+                  onClick={() => setNewFolderOpen(true)}
+                >
+                  <FolderPlus className="size-4" />
+                  New folder
+                </Button>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <input
         ref={uploadRef}
@@ -590,8 +796,13 @@ export function FileBrowser({
 
       {/* Selection bar */}
       {selected.size > 0 && (
-        <div className="fixed inset-x-0 bottom-40 z-40 mx-auto w-fit rise lg:bottom-6">
-          <div className="flex items-center gap-2 rounded-2xl border border-border bg-foreground text-background shadow-pop px-3 py-2">
+        <div
+          className={cn(
+            "fixed inset-x-0 bottom-40 z-40 mx-auto flex w-fit rise lg:bottom-6",
+            dockVisible && "lg:bottom-24"
+          )}
+        >
+          <div className="flex max-w-[calc(100vw-1.5rem)] flex-wrap items-center justify-center gap-2 rounded-2xl border border-border bg-foreground text-background shadow-pop px-3 py-2">
             <span className="tnum px-1 text-sm font-semibold">
               {selected.size} selected
             </span>
@@ -606,7 +817,7 @@ export function FileBrowser({
               }}
             >
               <FileDown className="size-4" />
-              Download
+              <span className="hidden sm:inline">Download</span>
             </Button>
             {writable && (
               <Button
@@ -616,7 +827,7 @@ export function FileBrowser({
                 onClick={() => setDeleteTargets(selectedEntries)}
               >
                 <Trash2 className="size-4" />
-                Delete
+                <span className="hidden sm:inline">Delete</span>
               </Button>
             )}
             <Button
@@ -725,22 +936,6 @@ export function FileBrowser({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* active transfer hint */}
-      {activeItems.length > 0 && (
-        <div className="pointer-events-none fixed bottom-4 left-1/2 z-30 -translate-x-1/2">
-          <div className="w-64 rounded-xl border border-border bg-card/95 p-3 shadow-pop backdrop-blur">
-            <p className="text-xs font-semibold">
-              {activeItems.length} transfer{activeItems.length === 1 ? "" : "s"} in progress
-            </p>
-            {activeItems.slice(0, 2).map((i) => (
-              <div key={i.id} className="mt-1.5">
-                <p className="truncate text-[11px] text-muted-foreground">{i.name}</p>
-                <Progress value={(i.transferred / Math.max(1, i.size)) * 100} className="mt-1 h-1" />
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -853,7 +1048,14 @@ function ListRow({
       <td className="min-w-0 px-2 py-2.5">
         <div className="flex min-w-0 items-center gap-2.5">
           <FileIcon entry={entry} className="size-8 shrink-0 [&>svg]:size-4" />
-          <span className="truncate font-medium">{entry.name}</span>
+          <div className="min-w-0 flex-1">
+            <span className="block truncate font-medium">{entry.name}</span>
+            {/* Phones: the Size / Modified columns are hidden, surface them here */}
+            <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground md:hidden">
+              <span className="sm:hidden">{entry.kind === "dir" ? "Folder" : formatBytes(entry.size)}</span>
+              <span className="hidden sm:inline">{formatDateTime(entry.modifiedAt)}</span>
+            </span>
+          </div>
         </div>
       </td>
       <td className="tnum hidden px-2 py-2.5 text-xs text-muted-foreground sm:table-cell">
