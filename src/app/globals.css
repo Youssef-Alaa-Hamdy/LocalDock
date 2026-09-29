@@ -304,3 +304,63 @@
     animation: none !important;
   }
 }
+
+/* ---------- Pro preview: audio player bits & range sliders ---------- */
+
+@keyframes ld-note-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.ld-bounce {
+  animation: ld-note-bounce 1s ease-in-out infinite;
+}
+
+/* equalizer bars under the audio art */
+@keyframes ld-eq {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+.ld-bar {
+  height: 100%;
+  animation: ld-eq 0.9s ease-in-out infinite;
+  transform-origin: bottom;
+}
+
+/* custom range inputs: audio seek/volume + explorer icon-size zoom */
+.ld-range,
+.ld-zoom {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--muted-foreground) 32%, transparent);
+  outline-offset: 4px;
+  cursor: pointer;
+}
+.ld-range::-webkit-slider-thumb,
+.ld-zoom::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--primary);
+  border: none;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+  cursor: grab;
+}
+.ld-range::-moz-range-thumb,
+.ld-zoom::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--primary);
+  border: none;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ld-bounce, .ld-bar {
+    animation: none !important;
+  }
+}

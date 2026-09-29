@@ -3,6 +3,7 @@ import { writeChunk } from "@/lib/localdock/uploads";
 import { shareGuard } from "@/lib/localdock/api-helpers";
 import { getUploadSessionShareId } from "@/lib/localdock/uploads-sessions";
 import { recordBytes } from "@/lib/localdock/metrics";
+import { trackUploadProgress } from "@/lib/localdock/transfer-activity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +30,8 @@ export async function PUT(req: Request) {
   try {
     const result = await writeChunk(uploadId, index, data);
     recordBytes(data.length);
+    // Live cross-device progress: received chunks * session chunk size.
+    trackUploadProgress(uploadId, sessionShareId, result.received, result.chunkSize ?? 0);
     return jsonOk(result);
   } catch (e) {
     const msg = (e as Error).message;

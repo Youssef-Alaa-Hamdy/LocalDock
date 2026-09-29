@@ -12,6 +12,7 @@ import type {
   LocalDockSettings,
   Share,
   SystemStatus,
+  TransferActivity,
   UploadSessionInfo,
   Website,
 } from "../types";
@@ -57,6 +58,54 @@ export function clearDeviceToken() {
 }
 export function getDeviceToken() {
   return deviceToken;
+}
+
+/**
+ * Stable per-browser id — lets a device recognize its own transfer activity
+ * (and filter it out of the "other devices" tray). Persisted once.
+ */
+const CLIENT_ID_KEY = "localdock.clientId";
+let clientIdValue: string | null = null;
+export function getClientId(): string {
+  if (typeof window === "undefined") return "server";
+  if (clientIdValue) return clientIdValue;
+  let id = window.localStorage.getItem(CLIENT_ID_KEY);
+  if (!id || !/^[a-zA-Z0-9_-]{4,80}$/.test(id)) {
+    id =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `c-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    window.localStorage.setItem(CLIENT_ID_KEY, id);
+  }
+  clientIdValue = id;
+  return id;
+}
+
+/** Friendly name this device reports for itself (browser + OS hints). */
+export function selfDeviceName(): string {
+  if (typeof navigator === "undefined") return "This device";
+  const ua = navigator.userAgent;
+  const os = /Android/i.test(ua)
+    ? "Android"
+    : /iPhone|iPad|iPod/i.test(ua)
+      ? "iPhone"
+      : /Macintosh|Mac OS/i.test(ua)
+        ? "Mac"
+        : /Windows/i.test(ua)
+          ? "Windows"
+          : /Linux/i.test(ua)
+            ? "Linux"
+            : "Device";
+  const browser = /Edg\//.test(ua)
+    ? "Edge"
+    : /Chrome\//.test(ua) && !/Chromium/.test(ua)
+      ? "Chrome"
+      : /Firefox\//.test(ua)
+        ? "Firefox"
+        : /Safari\//.test(ua)
+          ? "Safari"
+          : "";
+  return [os, browser].filter(Boolean).join(" · ");
 }
 
 export async function api<T>(
@@ -155,11 +204,42 @@ export const Api = {
     api<{ path: string; entries: FileEntry[] }>(
       `/api/shares/${shareId}/browse?path=${encodeURIComponent(path)}`
     ),
-  /** Cheap directory fingerprint for live-refresh polling. */
+  /** Cheap directory fingerprint for live-refresh polling (+ live activity). */
   browseSummary: (shareId: string, path: string) =>
-    api<{ path: string; summary: { count: number; size: number; latest: number } }>(
+    api<{
+      path: string;
+      summary: { count: number; size: number; latest: number };
+      activity?: TransferActivity[];
+    }>(
       `/api/shares/${shareId}/browse?path=${encodeURIComponent(path)}&summary=1`
     ),
+  /**
+   * Download heartbeat so OTHER devices see this download live.
+   * Throttled by the transfer engine (~1/s) — failures are swallowed.
+   */
+  reportTransfer: (
+    shareId: string,
+    input: {
+      key: string;
+      name: string;
+      size: number;
+      transferred: number;
+      status: "active" | "done" | "failed" | "canceled";
+    }
+  ) =>
+    fetch(`/api/shares/${shareId}/transfer-report`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-LocalDock-Owner": getOwnerKey() ?? "",
+        "X-LocalDock-Device": getDeviceToken() ?? "",
+      },
+      body: JSON.stringify({
+        ...input,
+        clientId: getClientId(),
+        deviceName: selfDeviceName(),
+      }),
+    }).catch(() => undefined),
   search: (shareId: string, q: string, path = "") =>
     api<{ results: FileEntry[] }>(
       `/api/shares/${shareId}/search?q=${encodeURIComponent(q)}&path=${encodeURIComponent(path)}`
@@ -184,6 +264,12 @@ export const Api = {
   fileHash: (shareId: string, path: string) =>
     api<{ sha256: string; size: number }>(
       `/api/shares/${shareId}/hash?path=${encodeURIComponent(path)}`
+    ),
+  /** Short-lived share-scoped token for header-less <img>/<video> loads. */
+  createLinkToken: (shareId: string) =>
+    api<{ token: string; expiresInSec: number }>(
+      `/api/shares/${shareId}/link-token`,
+      { method: "POST" }
     ),
 
   uploadInit: (input: {

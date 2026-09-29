@@ -1,6 +1,7 @@
 import { jsonError, jsonOk } from "@/lib/localdock/files";
 import { initUpload } from "@/lib/localdock/uploads";
 import { readJsonBody, shareGuard } from "@/lib/localdock/api-helpers";
+import { trackUploadStart } from "@/lib/localdock/transfer-activity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +33,15 @@ export async function POST(req: Request) {
       chunkSize: body.chunkSize,
       overwrite: body.overwrite,
       resumeUploadId: body.resumeUploadId,
+    });
+    // Surface this upload to every open device immediately.
+    trackUploadStart({
+      uploadId: result.uploadId,
+      shareId: body.shareId,
+      dirPath: body.dirPath ?? "",
+      name: result.finalName,
+      size: body.size ?? 0,
+      auth: guard.auth,
     });
     return jsonOk(result, 201);
   } catch (e) {

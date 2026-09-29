@@ -2,6 +2,7 @@ import { jsonError, jsonOk } from "@/lib/localdock/files";
 import { completeUpload } from "@/lib/localdock/uploads";
 import { logActivity } from "@/lib/localdock/registry";
 import { readJsonBody, shareGuard } from "@/lib/localdock/api-helpers";
+import { trackUploadDone } from "@/lib/localdock/transfer-activity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,6 +25,7 @@ export async function POST(req: Request) {
 
   try {
     const info = await completeUpload(body.uploadId, body.sha256);
+    trackUploadDone(body.uploadId, shareId, "done", info.finalName);
     await logActivity(
       "file.uploaded",
       `Received “${info.finalName}” into “${guard.share.name}”`,
@@ -46,8 +48,10 @@ export async function POST(req: Request) {
     const missing = (e as Error & { missing?: number[] }).missing;
     if (msg === "missing-chunks")
       return jsonOk({ incomplete: true, missingChunks: missing ?? [] });
-    if (msg === "checksum-mismatch")
+    if (msg === "checksum-mismatch") {
+      trackUploadDone(body.uploadId, shareId, "failed");
       return jsonError(422, "checksum-mismatch", "The uploaded file failed integrity verification.");
+    }
     if (msg === "size-mismatch")
       return jsonError(422, "size-mismatch", "The file on disk does not match the announced size.");
     if (msg === "session-not-found")

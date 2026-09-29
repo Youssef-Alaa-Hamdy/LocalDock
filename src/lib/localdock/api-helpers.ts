@@ -3,10 +3,11 @@
  */
 import { getAuth, isOwner, type ShareAction } from "./auth";
 import { jsonError } from "./files";
-import type { Share } from "./types";
+import type { AuthContext, Share } from "./types";
 import { getShare } from "./registry";
 import { logActivity } from "./registry";
 import { canAccessShare } from "./auth";
+import { resolveLinkToken } from "./link-tokens";
 
 export async function requireOwner(req: Request): Promise<Response | null> {
   const auth = getAuth(req);
@@ -20,15 +21,24 @@ export async function shareGuard(
   req: Request,
   shareId: string,
   action: ShareAction
-): Promise<{ share: Share } | { deny: Response }> {
+): Promise<{ share: Share; auth: AuthContext } | { deny: Response }> {
   const share = getShare(shareId);
   if (!share) {
     return { deny: jsonError(404, "share-not-found", "This shared folder no longer exists.") };
   }
   const auth = getAuth(req);
-  if (!canAccessShare(auth, share, action)) {
+  let effectiveAuth: AuthContext = auth;
+  if (auth.kind === "none") {
+    // Header-less media loads (<img>/<video>/<iframe> src) authenticate via a
+    // short-lived share-scoped link token (?t=…) issued to an authorized
+    // identity — the token inherits exactly that identity's access.
+    const token = new URL(req.url).searchParams.get("t") ?? "";
+    const tokenAuth = token ? resolveLinkToken(token, shareId) : null;
+    if (tokenAuth) effectiveAuth = tokenAuth;
+  }
+  if (!canAccessShare(effectiveAuth, share, action)) {
     void logActivity("security.denied", `Denied ${action} on “${share.name}”`, {
-      identity: auth.kind,
+      identity: effectiveAuth.kind,
     });
     return {
       deny: jsonError(
@@ -40,7 +50,7 @@ export async function shareGuard(
       ),
     };
   }
-  return { share };
+  return { share, auth: effectiveAuth };
 }
 
 export async function readJsonBody<T>(req: Request): Promise<T | null> {

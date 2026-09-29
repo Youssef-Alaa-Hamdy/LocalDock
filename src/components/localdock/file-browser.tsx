@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FileEntry } from "@/lib/localdock/types";
-import { Api } from "@/lib/localdock/client/api";
+import type { FileEntry, TransferActivity } from "@/lib/localdock/types";
+import { Api, getClientId } from "@/lib/localdock/client/api";
+import { thumbSrc } from "@/lib/localdock/client/media";
 import {
   transfers,
   useTransfers,
@@ -64,9 +65,13 @@ import {
   Image as ImageIcon,
   List,
   Loader2,
+  Minus,
+  MonitorSmartphone,
   MoreVertical,
   Package,
   Pencil,
+  Play,
+  Plus,
   Search,
   Smartphone,
   Trash2,
@@ -82,6 +87,10 @@ import { toast } from "sonner";
 import type { LucideIcon } from "lucide-react";
 
 type SortKey = "name" | "size" | "modified";
+
+const TILE_KEY = "localdock.tileSize";
+const TILE_MIN = 96;
+const TILE_MAX = 280;
 
 /** Directory fingerprint used for live refresh (count + total size + newest mtime). */
 function fingerprintOf(entries: FileEntry[]): string {
@@ -157,8 +166,29 @@ export function FileBrowser({
   const [newFolderName, setNewFolderName] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [tile, setTile] = useState(160);
   const uploadRef = useRef<HTMLInputElement>(null);
   const refresh = useRefresh();
+
+  /* ---------- grid tile size (desktop-explorer style zoom) ---------- */
+  useEffect(() => {
+    const saved = Number(window.localStorage.getItem(TILE_KEY));
+    if (saved >= TILE_MIN && saved <= TILE_MAX) setTile(saved);
+  }, []);
+  const changeTile = (v: number) => {
+    const clamped = Math.min(TILE_MAX, Math.max(TILE_MIN, Math.round(v)));
+    setTile(clamped);
+    window.localStorage.setItem(TILE_KEY, String(clamped));
+  };
+
+  /* ---------- live cross-device transfer activity ---------- */
+  const [activity, setActivity] = useState<TransferActivity[]>([]);
+  const lastActivityRef = useRef<Map<string, TransferActivity>>(new Map());
+  const speedRef = useRef<Map<string, { at: number; bytes: number }>>(new Map());
+  const myClientId = useRef<string>("");
+  useEffect(() => {
+    myClientId.current = getClientId();
+  }, []);
 
   /* ---------- live refresh state ---------- */
   const fingerprintRef = useRef<string>("");
@@ -207,6 +237,46 @@ export function FileBrowser({
    *  - Polling pauses while the tab is hidden or a server search is active.
    */
   const searchActive = searchResults !== null;
+
+  /*
+   * Diff the incoming activity snapshot against the previous one:
+   *  - remember per-transfer byte counts so a rough cross-poll speed can be
+   *    shown for OTHER devices' transfers;
+   *  - toast when a remote transfer finishes ("iPhone finished downloading…").
+   */
+  const applyActivity = useCallback((incoming: TransferActivity[]) => {
+    const prev = lastActivityRef.current;
+    const now = Date.now();
+    const next = new Map<string, TransferActivity>();
+    for (const a of incoming) {
+      next.set(a.id, a);
+      const old = prev.get(a.id);
+      if (a.status === "active") {
+        if (old) {
+          const delta = a.transferred - old.transferred;
+          const dt = now - old.updatedAt;
+          if (delta > 0 && dt > 0) speedRef.current.set(a.id, { at: now, bytes: delta * 1000 / dt });
+        }
+      } else if (old && old.status === "active" && a.clientId !== myClientId.current) {
+        const verb = a.kind === "upload" ? "uploading" : "downloading";
+        if (a.status === "done") {
+          toast.success(`${a.device} finished ${verb} “${a.name}”`, {
+            icon: a.kind === "upload" ? <ArrowUpFromLine className="size-4" /> : <ArrowDownToLine className="size-4" />,
+          });
+        } else if (a.status === "failed") {
+          toast.warning(`${a.device}'s ${verb} of “${a.name}” failed`, {
+            icon: <MonitorSmartphone className="size-4" />,
+          });
+        }
+      }
+    }
+    speedRef.current.forEach((_, id) => {
+      if (!next.has(id)) speedRef.current.delete(id);
+    });
+    lastActivityRef.current = next;
+    setActivity(incoming);
+  }, []);
+
   useEffect(() => {
     fingerprintRef.current = ""; // moving to another folder resets the baseline
     let cancelled = false;
@@ -222,6 +292,9 @@ export function FileBrowser({
         } else {
           fingerprintRef.current = fp;
         }
+        if (res.activity) {
+          applyActivity(res.activity);
+        }
       } catch {
         /* server busy or unreachable — retry on the next tick */
       }
@@ -236,7 +309,7 @@ export function FileBrowser({
       clearInterval(t);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [shareId, path, searchActive, load]);
+  }, [shareId, path, searchActive, load, applyActivity]);
 
   /* Instant refresh when an upload lands in the folder being viewed. */
   useEffect(() => {
@@ -412,6 +485,22 @@ export function FileBrowser({
   const dockItems = selectDockItems(items);
   const dockVisible = dockItems.length > 0;
 
+  /** Files in the current view (preview navigation order). */
+  const fileSiblings = useMemo(
+    () => visible.filter((e) => e.kind === "file").map((e) => ({ entry: e, rel: joinPath(path, e.name) })),
+    [visible, path]
+  );
+
+  /** Transfers happening on OTHER devices (active, or just finished). */
+  const remoteActivity = useMemo(() => {
+    const now = Date.now();
+    return activity.filter(
+      (a) =>
+        a.clientId !== myClientId.current &&
+        (a.status === "active" || (a.status !== "canceled" && now - a.updatedAt < 10_000))
+    );
+  }, [activity]);
+
   /** Live uploads for this share — current folder first, others after. */
   const activeUploads = useMemo(() => {
     const ups = items.filter(
@@ -544,6 +633,39 @@ export function FileBrowser({
               <List className="size-4" />
             </button>
           </div>
+
+          {/* Explorer-style icon-size zoom (grid view only) */}
+          {view === "grid" && (
+            <div
+              className="flex items-center gap-1 rounded-xl border border-border px-1.5"
+              title="Icon size"
+            >
+              <button
+                onClick={() => changeTile(tile - 16)}
+                className="p-1.5 text-muted-foreground transition-colors hover:text-foreground"
+                aria-label="Smaller icons"
+              >
+                <Minus className="size-3.5" />
+              </button>
+              <input
+                type="range"
+                min={TILE_MIN}
+                max={TILE_MAX}
+                step={8}
+                value={tile}
+                onChange={(e) => changeTile(Number(e.target.value))}
+                className="ld-zoom w-16 sm:w-24"
+                aria-label="Grid icon size"
+              />
+              <button
+                onClick={() => changeTile(tile + 16)}
+                className="p-1.5 text-muted-foreground transition-colors hover:text-foreground"
+                aria-label="Larger icons"
+              >
+                <Plus className="size-3.5" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -654,6 +776,86 @@ export function FileBrowser({
         </div>
       )}
 
+      {/* Live transfers on OTHER devices — uploads + downloads, same picture
+          every device sees ("iPhone is downloading vacation.mp4 45%") */}
+      {remoteActivity.length > 0 && (
+        <div className="rise mt-2 overflow-hidden rounded-2xl border border-border/70 bg-muted/30">
+          <div className="flex items-center gap-2 px-3.5 pb-1 pt-2.5">
+            <MonitorSmartphone className="size-3.5 shrink-0 text-muted-foreground" />
+            <p className="min-w-0 truncate text-xs font-semibold">
+              {remoteActivity.length === 1
+                ? "1 transfer on another device"
+                : `${remoteActivity.length} transfers on other devices`}
+            </p>
+            <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
+              <span className="size-1.5 rounded-full bg-success dot-pulse" />
+              live
+            </span>
+          </div>
+          <div className="space-y-2.5 px-3.5 pb-3 pt-1.5">
+            {remoteActivity.slice(0, 5).map((a) => {
+              const p = a.size > 0 ? Math.min(100, (a.transferred / a.size) * 100) : a.status === "done" ? 100 : 0;
+              const speed = speedRef.current.get(a.id)?.bytes ?? 0;
+              const verb = a.kind === "upload" ? "Uploading" : "Downloading";
+              const inThisFolder = a.kind === "upload" && (a.dirPath ?? "") === path;
+              return (
+                <div key={a.id}>
+                  <div className="flex min-w-0 items-center gap-2 text-xs">
+                    <span
+                      className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[9px] font-black uppercase text-primary"
+                      title={a.device}
+                      aria-hidden
+                    >
+                      {a.device.slice(0, 1)}
+                    </span>
+                    {a.kind === "upload" ? (
+                      <ArrowUpFromLine className="size-3 shrink-0 text-primary" />
+                    ) : (
+                      <ArrowDownToLine className="size-3 shrink-0 text-muted-foreground" />
+                    )}
+                    <span className="min-w-0 truncate font-medium">
+                      <span className="text-muted-foreground">{a.device} · </span>
+                      {a.status === "done" ? `${verb.replace("ing", "ed")} ` : a.status === "failed" ? "Failed: " : `${verb} `}
+                      {a.name}
+                    </span>
+                    {!inThisFolder && a.kind === "upload" && (a.dirPath ?? "") !== "" && (
+                      <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        /{a.dirPath}
+                      </span>
+                    )}
+                    <span className="tnum ml-auto shrink-0 font-semibold">
+                      {a.status === "done" ? (
+                        <span className="text-success">Done</span>
+                      ) : a.status === "failed" ? (
+                        <span className="text-destructive">Failed</span>
+                      ) : (
+                        <>
+                          {Math.round(p)}%
+                          {speed > 0 && (
+                            <span className="ml-1.5 font-normal text-muted-foreground">{formatSpeed(speed)}</span>
+                          )}
+                        </>
+                      )}
+                    </span>
+                  </div>
+                  {a.status === "active" && (
+                    <div className="relative mt-1 h-1 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="progress-shimmer h-full rounded-full bg-primary/80 transition-[width] duration-500"
+                        style={{ width: `${Math.max(2, p)}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {remoteActivity.length > 5 && (
+              <p className="text-[11px] font-medium text-muted-foreground">+ {remoteActivity.length - 5} more</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Content — full page scroll on phones, capped nested scroller on desktop */}
       <div className={cn("ld-scroll mt-3 flex-1 overflow-y-auto pb-24", embedded ? "" : "lg:max-h-[62vh]")}>
         {loading ? (
@@ -681,11 +883,16 @@ export function FileBrowser({
             )}
           </div>
         ) : view === "grid" ? (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
+          <div
+            className="grid gap-2"
+            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tile}px, 1fr))` }}
+          >
             {visible.map((entry) => (
               <GridCard
                 key={`${entry.kind}:${entry.name}`}
                 entry={entry}
+                shareId={shareId}
+                relPath={joinPath(path, entry.name)}
                 selected={selected.has(entry.name)}
                 onSelect={(additive) => toggleSelect(entry.name, additive)}
                 onOpen={() => openEntry(entry)}
@@ -722,6 +929,8 @@ export function FileBrowser({
                   <ListRow
                     key={`${entry.kind}:${entry.name}`}
                     entry={entry}
+                    shareId={shareId}
+                    relPath={joinPath(path, entry.name)}
                     selected={selected.has(entry.name)}
                     onSelect={(additive) => toggleSelect(entry.name, additive)}
                     onOpen={() => openEntry(entry)}
@@ -850,6 +1059,8 @@ export function FileBrowser({
           shareName={shareName}
           entry={preview.entry}
           relPath={preview.rel}
+          siblings={fileSiblings}
+          onNavigate={(s) => setPreview(s)}
           onClose={() => setPreview(null)}
           onDownload={() => downloadEntry(preview.entry)}
         />
@@ -942,8 +1153,72 @@ export function FileBrowser({
 
 /* ---------------- item renderers ---------------- */
 
+/**
+ * Thumbnail tile for images (sharp) and videos (ffmpeg frame grab), with a
+ * clean fallback to the type icon whenever no thumbnail exists (404).
+ * Loads lazily — a folder of documents never requests a single thumbnail.
+ */
+function EntryThumb({
+  shareId,
+  relPath,
+  entry,
+  className,
+}: {
+  shareId: string;
+  relPath: string;
+  entry: FileEntry;
+  className?: string;
+}) {
+  const thumbable =
+    entry.kind === "file" && (entry.category === "image" || entry.category === "video");
+  // Resolved thumbnail, tagged with the path it belongs to — a path change
+  // instantly "clears" the tile without any synchronous state reset.
+  const [loaded, setLoaded] = useState<{ rel: string; src: string; failed: boolean } | null>(null);
+  const valid = loaded && loaded.rel === relPath && !loaded.failed ? loaded.src : null;
+
+  useEffect(() => {
+    if (!thumbable) return;
+    let ok = true;
+    void thumbSrc(shareId, relPath, 480)
+      .then((u) => {
+        if (ok) setLoaded({ rel: relPath, src: u, failed: false });
+      })
+      .catch(() => {
+        if (ok) setLoaded({ rel: relPath, src: "", failed: true });
+      });
+    return () => {
+      ok = false;
+    };
+  }, [thumbable, shareId, relPath]);
+
+  if (!thumbable || !valid) {
+    return <FileIcon entry={entry} className={className} />;
+  }
+  return (
+    <span className={cn("relative flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted", className)}>
+      <img
+        src={valid}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onError={() => setLoaded((l) => (l ? { ...l, failed: true } : l))}
+        className="size-full object-cover"
+      />
+      {entry.category === "video" && (
+        <span className="absolute inset-0 flex items-center justify-center bg-black/25">
+          <span className="flex size-6 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm">
+            <Play className="size-3 translate-x-px fill-current" />
+          </span>
+        </span>
+      )}
+    </span>
+  );
+}
+
 function GridCard({
   entry,
+  shareId,
+  relPath,
   selected,
   onSelect,
   onOpen,
@@ -953,6 +1228,8 @@ function GridCard({
   writable,
 }: {
   entry: FileEntry;
+  shareId: string;
+  relPath: string;
   selected: boolean;
   onSelect: (additive: boolean) => void;
   onOpen: () => void;
@@ -961,6 +1238,8 @@ function GridCard({
   onDelete: () => void;
   writable: boolean;
 }) {
+  const canThumb =
+    entry.kind === "file" && (entry.category === "image" || entry.category === "video");
   return (
     <div
       className={cn(
@@ -980,7 +1259,7 @@ function GridCard({
     >
       <span
         className={cn(
-          "absolute left-2 top-2 size-4 rounded border transition-opacity",
+          "absolute left-2 top-2 size-4 rounded border bg-card transition-opacity",
           selected ? "border-primary bg-primary opacity-100" : "border-border opacity-0 group-hover:opacity-100"
         )}
         onClick={(e) => {
@@ -989,7 +1268,14 @@ function GridCard({
         }}
         aria-hidden
       />
-      <FileIcon entry={entry} className="size-12 [&>svg]:size-6" />
+      <span className="flex h-20 w-full items-center justify-center">
+        <EntryThumb
+          entry={entry}
+          shareId={shareId}
+          relPath={relPath}
+          className={canThumb ? "h-20 w-full max-w-36 rounded-xl" : "size-12 [&>svg]:size-6"}
+        />
+      </span>
       <p className="w-full truncate text-xs font-medium" title={entry.name}>
         {entry.name}
       </p>
@@ -1012,6 +1298,8 @@ function GridCard({
 
 function ListRow({
   entry,
+  shareId,
+  relPath,
   selected,
   onSelect,
   onOpen,
@@ -1021,6 +1309,8 @@ function ListRow({
   writable,
 }: {
   entry: FileEntry;
+  shareId: string;
+  relPath: string;
   selected: boolean;
   onSelect: (additive: boolean) => void;
   onOpen: () => void;
@@ -1029,6 +1319,8 @@ function ListRow({
   onDelete: () => void;
   writable: boolean;
 }) {
+  const canThumb =
+    entry.kind === "file" && (entry.category === "image" || entry.category === "video");
   return (
     <tr
       className={cn("cursor-pointer transition-colors", selected ? "bg-accent/50" : "hover:bg-muted/50")}
@@ -1047,7 +1339,12 @@ function ListRow({
       </td>
       <td className="min-w-0 px-2 py-2.5">
         <div className="flex min-w-0 items-center gap-2.5">
-          <FileIcon entry={entry} className="size-8 shrink-0 [&>svg]:size-4" />
+          <EntryThumb
+            entry={entry}
+            shareId={shareId}
+            relPath={relPath}
+            className={canThumb ? "size-9 rounded-lg" : "size-8 shrink-0 [&>svg]:size-4"}
+          />
           <div className="min-w-0 flex-1">
             <span className="block truncate font-medium">{entry.name}</span>
             {/* Phones: the Size / Modified columns are hidden, surface them here */}

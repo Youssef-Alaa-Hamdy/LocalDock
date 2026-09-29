@@ -166,6 +166,7 @@ class TransferEngine {
   private running = 0;
   private speedometers = new Map<string, Speedometer>();
   private booted = false;
+  private lastActivityReport = new Map<string, number>();
   private uploadCompletedListeners = new Set<
     (info: { shareId: string; dirPath: string; name: string }) => void
   >();
@@ -190,6 +191,35 @@ class TransferEngine {
         /* listener errors must never break the queue */
       }
     }
+  }
+
+  /**
+   * Cross-device download heartbeat. Throttled to ~1/s (unless `force`); the
+   * server exposes these through the ?summary=1 poll, so every other open
+   * device sees this download live — the same picture uploads already get.
+   * Failures are deliberately swallowed: activity display must never break
+   * the actual transfer.
+   */
+  private reportActivity(
+    item: TransferItem,
+    status: "active" | "done" | "failed" | "canceled" = "active",
+    force = false
+  ) {
+    if (typeof window === "undefined") return;
+    const now = Date.now();
+    if (!force) {
+      const last = this.lastActivityReport.get(item.id) ?? 0;
+      if (now - last < 1000) return;
+    }
+    this.lastActivityReport.set(item.id, now);
+    void Api.reportTransfer(item.shareId, {
+      key: `dl-${item.id}`.slice(0, 80),
+      name: item.name,
+      size: item.size,
+      transferred: Math.min(item.transferred, item.size),
+      status,
+    });
+    if (status !== "active") this.lastActivityReport.delete(item.id);
   }
 
   boot() {
@@ -326,6 +356,7 @@ class TransferEngine {
     }
     if (item.kind === "download") {
       await idb.del(id);
+      this.reportActivity(item, "canceled", true); // vanish instantly elsewhere
     }
     useTransfers.getState().patch(id, { status: "canceled" });
     this.persist();
@@ -401,6 +432,7 @@ class TransferEngine {
       status: "failed",
       error: err.friendly || err.message || "The transfer failed.",
     });
+    if (item.kind === "download") this.reportActivity(item, "failed", true);
     this.persist();
   }
 
@@ -565,6 +597,7 @@ class TransferEngine {
 
   private async runDownload(item: TransferItem) {
     const speedo = this.speedo(item.id);
+    this.reportActivity(item, "active", true); // tell the other devices
     const canStream =
       typeof window !== "undefined" &&
       "showSaveFilePicker" in window &&
@@ -617,6 +650,7 @@ class TransferEngine {
         etaSec: null,
       });
       await idb.del(item.id);
+      this.reportActivity(item, "done", true);
       this.persist();
       return;
     }
@@ -656,6 +690,7 @@ class TransferEngine {
             speedBps: bps,
             etaSec: bps > 0 ? (item.size - offset) / bps : null,
           });
+          this.reportActivity(item); // throttled heartbeat for other devices
         }
         await writable.close();
       });
@@ -670,6 +705,7 @@ class TransferEngine {
       completedAt: Date.now(),
     });
     await idb.del(item.id);
+    this.reportActivity(item, "done", true);
     this.persist();
   }
 
@@ -678,6 +714,7 @@ class TransferEngine {
     const headers = transferHeaders(
       item.transferred > 0 ? { Range: `bytes=${item.transferred}-` } : {}
     );
+    this.reportActivity(item, "active", true);
 
     const res = await fetch(url, {
       headers,
@@ -704,6 +741,7 @@ class TransferEngine {
         speedBps: bps,
         etaSec: bps > 0 ? Math.max(0, item.size - received) / bps : null,
       });
+      this.reportActivity(item); // throttled heartbeat for other devices
     }
 
     const finalBuffer = chunks as BlobPart[];
@@ -726,6 +764,7 @@ class TransferEngine {
       completedAt: Date.now(),
     });
     void total;
+    this.reportActivity(item, "done", true);
     this.persist();
   }
 

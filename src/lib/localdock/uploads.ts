@@ -170,7 +170,7 @@ export async function writeChunk(
   uploadId: string,
   index: number,
   data: Buffer
-): Promise<{ received: number; totalChunks: number }> {
+): Promise<{ received: number; totalChunks: number; chunkSize: number }> {
   const session = readSession(uploadId);
   if (!session || session.status !== "active") throw new Error("session-not-found");
   if (!Number.isInteger(index) || index < 0 || index >= session.totalChunks) {
@@ -196,7 +196,11 @@ export async function writeChunk(
 
   if (!session.received.includes(index)) session.received.push(index);
   await writeSession(session);
-  return { received: session.received.length, totalChunks: session.totalChunks };
+  return {
+    received: session.received.length,
+    totalChunks: session.totalChunks,
+    chunkSize: session.chunkSize,
+  };
 }
 
 export async function statusOf(

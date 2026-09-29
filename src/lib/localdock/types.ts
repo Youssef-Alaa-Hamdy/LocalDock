@@ -151,6 +151,32 @@ export interface AuthContext {
   device?: Device;
 }
 
+/* ---------- Cross-device live transfer activity ---------- */
+
+/**
+ * A transfer currently in flight (or just finished) on ANY device connected
+ * to this server. Surfaced to every open client so everyone sees the same
+ * live "who is transferring what" picture — like a pro transfer tool.
+ */
+export interface TransferActivity {
+  /** Server-side id (uploadId for uploads, clientId+path for downloads). */
+  id: string;
+  shareId: string;
+  kind: "upload" | "download";
+  name: string;
+  size: number;
+  transferred: number;
+  /** Human label: device name, "Owner console" or "Guest". */
+  device: string;
+  /** Opaque client id so a device can filter out its own transfers. */
+  clientId: string;
+  /** Uploads: destination dir inside the share ("" = root). */
+  dirPath?: string;
+  startedAt: number;
+  updatedAt: number;
+  status: "active" | "done" | "failed" | "canceled";
+}
+
 /* ---------- Transfer engine (client side) ---------- */
 
 export type TransferKind = "upload" | "download";

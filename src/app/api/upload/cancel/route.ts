@@ -1,6 +1,7 @@
 import { jsonError, jsonOk } from "@/lib/localdock/files";
 import { cancelUpload } from "@/lib/localdock/uploads";
 import { readJsonBody, shareGuard } from "@/lib/localdock/api-helpers";
+import { trackUploadDone } from "@/lib/localdock/transfer-activity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,5 +22,6 @@ export async function POST(req: Request) {
   if ("deny" in guard) return guard.deny;
 
   await cancelUpload(body.uploadId);
+  trackUploadDone(body.uploadId, shareId, "canceled");
   return jsonOk({ ok: true });
 }
