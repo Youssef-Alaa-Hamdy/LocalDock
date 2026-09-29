@@ -1,0 +1,68 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "LocalDock",
+  "mainBinaryName": "LocalDock",
+  "version": "1.0.0",
+  "identifier": "app.localdock.desktop",
+  "build": {
+    "beforeDevCommand": "bun run dev",
+    "devUrl": "http://localhost:3000",
+    "beforeBuildCommand": "bun run tauri:prep",
+    "frontendDist": "./frontend-dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "LocalDock — Your Personal Local Cloud",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 940,
+        "minHeight": 600,
+        "center": true,
+        "resizable": true,
+        "visible": true,
+        "decorations": true,
+        "theme": null
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "LocalDock",
+    "category": "Utility",
+    "shortDescription": "Your Personal Local Cloud",
+    "longDescription": "Turn any Windows PC into a private personal cloud on your local network. No accounts, no cloud, no internet required.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "resources/server/*",
+      "resources/server/.next/*",
+      "resources/server/.next/**/*",
+      "resources/server/node_modules/**/*",
+      "resources/server/public/**/*",
+      "resources/bin/node.exe"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["English", "Arabic"],
+        "displayLanguageSelector": false,
+        "compression": "lzma"
+      }
+    }
+  }
+}

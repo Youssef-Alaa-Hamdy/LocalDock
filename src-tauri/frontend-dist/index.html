@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>LocalDock</title>
+    <style>
+      :root { color-scheme: light dark; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 22px; font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+        background: #fafaf9; transition: background 0.3s;
+      }
+      @media (prefers-color-scheme: dark) { body { background: #0c0a09; } }
+      .mark { width: 76px; height: 76px; border-radius: 22px; position: relative;
+        background: linear-gradient(145deg, #14b8a6, #0f766e);
+        box-shadow: 0 18px 40px -18px rgba(15, 118, 110, 0.55);
+        animation: breathe 2.4s ease-in-out infinite; }
+      .mark::after { content: ""; position: absolute; left: 26px; bottom: 18px;
+        width: 24px; height: 5px; border-radius: 3px; background: #fff; }
+      .mark::before { content: ""; position: absolute; left: 26px; top: 18px;
+        width: 5px; height: 27px; border-radius: 3px 0 0 3px; background: #fff; }
+      .bar { width: 5px; height: 15px; position: absolute; right: 25px; top: 18px;
+        border-radius: 0 3px 3px 0; background: rgba(255,255,255,0.85); }
+      .text { font-size: 14px; font-weight: 600; letter-spacing: 0.01em; color: #1c1917; }
+      @media (prefers-color-scheme: dark) { .text { color: #fafaf9; } }
+      .sub { font-size: 12px; color: #a8a29e; margin-top: -14px; }
+      .dots::after { content: ""; animation: dots 1.6s steps(4, end) infinite; }
+      @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+      @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+    </style>
+  </head>
+  <body>
+    <div class="mark"><div class="bar"></div></div>
+    <div class="text">Starting your local cloud<span class="dots"></span></div>
+    <div class="sub">This takes only a moment</div>
+    <script>
+      // Safety net: if the server never comes up, say so instead of waiting forever.
+      setTimeout(function () {
+        var sub = document.querySelector(".sub");
+        if (sub) sub.textContent = "Still starting — the server will appear here automatically.";
+      }, 20000);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,44 @@
+import { jsonError, jsonOk } from "@/lib/localdock/files";
+import { initUpload } from "@/lib/localdock/uploads";
+import { readJsonBody, shareGuard } from "@/lib/localdock/api-helpers";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+interface Body {
+  shareId?: string;
+  dirPath?: string;
+  name?: string;
+  size?: number;
+  chunkSize?: number;
+  overwrite?: boolean;
+  resumeUploadId?: string;
+}
+
+export async function POST(req: Request) {
+  const body = await readJsonBody<Body>(req);
+  if (!body?.shareId || !body.name)
+    return jsonError(400, "bad-body", "Upload needs a share and a file name.");
+
+  const guard = await shareGuard(req, body.shareId, "write");
+  if ("deny" in guard) return guard.deny;
+
+  try {
+    const result = await initUpload(guard.share.rootPath, {
+      shareId: body.shareId,
+      dirRelPath: body.dirPath ?? "",
+      name: body.name,
+      size: body.size ?? 0,
+      chunkSize: body.chunkSize,
+      overwrite: body.overwrite,
+      resumeUploadId: body.resumeUploadId,
+    });
+    return jsonOk(result, 201);
+  } catch (e) {
+    const msg = (e as Error).message;
+    if (msg === "invalid-name")
+      return jsonError(400, "bad-name", "This file name cannot be used.");
+    if (msg === "invalid-dir") return jsonError(400, "bad-path", "Invalid destination folder.");
+    return jsonError(500, "init-failed", "The upload could not be started.");
+  }
+}

@@ -1,0 +1,31 @@
+import { ensureSeeded } from "@/lib/localdock/seed";
+import { getSettings, networkInterfaces, serverBaseUrlFrom, VERSION } from "@/lib/localdock/registry";
+import { jsonOk } from "@/lib/localdock/files";
+import { DESKTOP_MODE } from "@/lib/localdock/store";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/**
+ * Bootstrap: provisions the LocalDock home (first run), returns identity +
+ * owner credentials for the console. In the packaged desktop build this
+ * endpoint is loopback-only (settings.allowRemoteOwner = false).
+ */
+export async function GET(req: Request) {
+  await ensureSeeded();
+  const settings = getSettings();
+  const nics = networkInterfaces();
+  const lanIp = nics.length > 0 ? nics[0].address : null;
+  return jsonOk({
+    version: VERSION,
+    serverId: settings.serverId,
+    serverName: settings.serverName,
+    ownerKey: settings.ownerKey,
+    onboarded: settings.onboarded,
+    baseUrl: serverBaseUrlFrom(req),
+    /** First non-loopback IPv4 — used to build QR & share links for other devices. */
+    lanIp,
+    /** True under the Windows/Tauri shell — unlocks native folder picker etc. */
+    desktop: DESKTOP_MODE,
+  });
+}
