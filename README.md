@@ -1,9 +1,10 @@
 <div align="center">
 
-# ⚓ LocalDock
+  <img src="src-tauri/icons/icon.png" width="128" height="128" alt="LocalDock Logo" />
 
-### Turn Any Computer into a Private Personal Cloud for Your Local Network
-**حوّل أي كمبيوتر إلى سحابة شخصية محلية خاصة — بلا Cloud، بلا حسابات، وبلا قيود**
+  <h1>LocalDock</h1>
+  <p><strong>Turn Any Computer into a Private Personal Cloud for Your Local Network</strong><br/>
+  حوّل أي كمبيوتر إلى سحابة شخصية محلية خاصة — بلا Cloud، بلا حسابات، وبلا قيود</p>
 
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows%20x64-0078D6?logo=windows&logoColor=white)](https://github.com/Youssef-Alaa-Hamdy/LocalDock/releases)
 [![Tauri v2](https://img.shields.io/badge/Tauri-v2-FFC131?logo=tauri&logoColor=black)](https://tauri.app/)
