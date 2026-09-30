@@ -53,11 +53,7 @@ export function SettingsView() {
   useEffect(() => {
     void (async () => {
       try {
-        const res = await fetch("/api/settings", {
-          headers: { "X-LocalDock-Owner": (await import("@/lib/localdock/client/api")).getOwnerKey() ?? "" },
-          cache: "no-store",
-        });
-        const body = (await res.json()) as { settings?: LocalDockSettings };
+        const body = await Api.settings();
         if (body.settings) {
           setSettings(body.settings);
           setName(body.settings.serverName);

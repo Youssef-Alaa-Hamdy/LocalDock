@@ -7,7 +7,7 @@ import {
   logActivity,
   setShareStats,
 } from "@/lib/localdock/registry";
-import { readJsonBody, requireOwner } from "@/lib/localdock/api-helpers";
+import { readJsonBody, requireAuth } from "@/lib/localdock/api-helpers";
 import { measureDir, resolveNativeFolder } from "@/lib/localdock/files";
 import { sanitizeName, uniquifyPath } from "@/lib/localdock/paths";
 import { HOME, SHARES_DIR } from "@/lib/localdock/store";
@@ -18,9 +18,19 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const denied = await requireOwner(req);
-  if (denied) return denied;
-  return jsonOk({ shares: listShares() });
+  const check = await requireAuth(req);
+  if ("deny" in check) return check.deny;
+  const allShares = listShares();
+  if (check.auth.kind === "owner") {
+    return jsonOk({ shares: allShares });
+  }
+  const deviceId = check.auth.device?.id;
+  const allowed = allShares.filter(
+    (s) =>
+      s.allowedDevices === "all" ||
+      (deviceId && Array.isArray(s.allowedDevices) && s.allowedDevices.includes(deviceId))
+  );
+  return jsonOk({ shares: allowed });
 }
 
 interface CreateBody {
@@ -43,13 +53,22 @@ interface CreateBody {
 }
 
 export async function POST(req: Request) {
-  const denied = await requireOwner(req);
-  if (denied) return denied;
+  const check = await requireAuth(req);
+  if ("deny" in check) return check.deny;
   const body = await readJsonBody<CreateBody>(req);
   if (!body?.name || !body.name.trim()) {
     return jsonError(400, "bad-name", "Please give this folder a name.", {
       key: "needFolderName",
     });
+  }
+
+  if (check.auth.kind === "device" && !body.viaUpload) {
+    return jsonError(
+      403,
+      "forbidden",
+      "Companion devices can only create shares via folder upload.",
+      { key: "forbidden" }
+    );
   }
 
   let rootAbs: string;

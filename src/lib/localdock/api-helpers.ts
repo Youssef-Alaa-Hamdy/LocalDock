@@ -1,7 +1,7 @@
 /**
  * LocalDock — API route helpers (auth guards, body parsing, errors).
  */
-import { getAuth, isOwner, type ShareAction } from "./auth";
+import { getAuth, isOwner, isAuth, type ShareAction } from "./auth";
 import { jsonError } from "./files";
 import type { AuthContext, Share } from "./types";
 import { getShare } from "./registry";
@@ -20,6 +20,23 @@ export async function requireOwner(req: Request): Promise<Response | null> {
     );
   }
   return null;
+}
+
+export async function requireAuth(
+  req: Request
+): Promise<{ auth: AuthContext } | { deny: Response }> {
+  const auth = getAuth(req);
+  if (!isAuth(auth)) {
+    return {
+      deny: jsonError(
+        401,
+        "unauthorized",
+        "Please pair this device with LocalDock or log in as owner.",
+        { key: "unauthorized" }
+      ),
+    };
+  }
+  return { auth };
 }
 
 export async function shareGuard(

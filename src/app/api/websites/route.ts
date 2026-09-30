@@ -2,7 +2,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { jsonError, jsonOk, resolveNativeFolder } from "@/lib/localdock/files";
 import { createWebsite, listWebsites, logActivity } from "@/lib/localdock/registry";
-import { readJsonBody, requireOwner } from "@/lib/localdock/api-helpers";
+import { readJsonBody, requireAuth, requireOwner } from "@/lib/localdock/api-helpers";
 import { resolveSafe, validateSlug, slugify } from "@/lib/localdock/paths";
 import { SITES_DIR } from "@/lib/localdock/store";
 
@@ -10,8 +10,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const denied = await requireOwner(req);
-  if (denied) return denied;
+  const check = await requireAuth(req);
+  if ("deny" in check) return check.deny;
   return jsonOk({ websites: listWebsites() });
 }
 

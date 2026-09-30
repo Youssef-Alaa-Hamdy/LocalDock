@@ -1,13 +1,13 @@
 import { jsonOk } from "@/lib/localdock/files";
 import { listDevices } from "@/lib/localdock/registry";
-import { requireOwner } from "@/lib/localdock/api-helpers";
+import { requireAuth } from "@/lib/localdock/api-helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const denied = await requireOwner(req);
-  if (denied) return denied;
+  const check = await requireAuth(req);
+  if ("deny" in check) return check.deny;
   const now = Date.now();
   return jsonOk({
     devices: listDevices().map((d) => ({

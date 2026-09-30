@@ -5,7 +5,7 @@ import {
   logActivity,
   updateShare,
 } from "@/lib/localdock/registry";
-import { readJsonBody, requireOwner } from "@/lib/localdock/api-helpers";
+import { readJsonBody, requireOwner, shareGuard } from "@/lib/localdock/api-helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,15 +13,10 @@ export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(req: Request, ctx: Ctx) {
-  const denied = await requireOwner(req);
-  if (denied) return denied;
   const { id } = await ctx.params;
-  const share = getShare(id);
-  if (!share)
-    return jsonError(404, "share-not-found", "Shared folder not found.", {
-      key: "shareNotFound",
-    });
-  return jsonOk({ share });
+  const guard = await shareGuard(req, id, "list");
+  if ("deny" in guard) return guard.deny;
+  return jsonOk({ share: guard.share });
 }
 
 interface PatchBody {

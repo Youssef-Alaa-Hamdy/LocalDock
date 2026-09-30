@@ -117,8 +117,16 @@ export default function LocalDockApp() {
     return (
       <PairClaimView
         code={pairCode}
-        onDone={() => setMode("shell")}
-        onExit={() => setMode("boot")}
+        onDone={() => {
+          setPairCode(null);
+          setMode("boot");
+          void boot();
+        }}
+        onExit={() => {
+          setPairCode(null);
+          setMode("boot");
+          void boot();
+        }}
       />
     );
   }

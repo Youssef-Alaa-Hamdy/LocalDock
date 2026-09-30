@@ -205,6 +205,8 @@ export const Api = {
 
   activity: (limit = 40) => api<{ activity: ActivityEntry[] }>(`/api/activity?limit=${limit}`),
 
+  settings: () => api<{ settings: LocalDockSettings }>("/api/settings"),
+
   updateSettings: (patch: Partial<LocalDockSettings>) =>
     api<{ settings: LocalDockSettings }>("/api/settings", {
       method: "PATCH",

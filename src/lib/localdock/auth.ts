@@ -29,7 +29,7 @@ export function getAuth(req: Request): AuthContext {
       if (settings.allowRemoteOwner || requestIsLocal(req)) {
         return { kind: "owner" };
       }
-      return { kind: "none" };
+      // If remote owner is disabled, fall through to check if this is an authorized paired device
     }
     // wrong owner key falls through to device check
   }
@@ -47,6 +47,10 @@ export function getAuth(req: Request): AuthContext {
 
 export function isOwner(auth: AuthContext): boolean {
   return auth.kind === "owner";
+}
+
+export function isAuth(auth: AuthContext): boolean {
+  return auth.kind === "owner" || auth.kind === "device";
 }
 
 export type ShareAction =

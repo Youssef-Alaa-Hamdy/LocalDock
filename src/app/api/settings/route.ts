@@ -1,14 +1,14 @@
 import { jsonError, jsonOk } from "@/lib/localdock/files";
 import { getSettings, updateSettings } from "@/lib/localdock/registry";
-import { readJsonBody, requireOwner } from "@/lib/localdock/api-helpers";
+import { readJsonBody, requireAuth, requireOwner } from "@/lib/localdock/api-helpers";
 import type { LocalDockSettings } from "@/lib/localdock/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const denied = await requireOwner(req);
-  if (denied) return denied;
+  const check = await requireAuth(req);
+  if ("deny" in check) return check.deny;
   return jsonOk({ settings: getSettings() });
 }
 

@@ -11,15 +11,15 @@ import {
   STARTED_AT,
 } from "@/lib/localdock/registry";
 import { currentSpeedBps } from "@/lib/localdock/metrics";
-import { requireOwner } from "@/lib/localdock/api-helpers";
+import { requireAuth } from "@/lib/localdock/api-helpers";
 import { HOME } from "@/lib/localdock/store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
-  const denied = await requireOwner(req);
-  if (denied) return denied;
+  const check = await requireAuth(req);
+  if ("deny" in check) return check.deny;
 
   const settings = getSettings();
   const shares = listShares();
