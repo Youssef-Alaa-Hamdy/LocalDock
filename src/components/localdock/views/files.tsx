@@ -10,7 +10,6 @@ import { cn } from "@/lib/utils";
 import { HardDrive, FolderPlus, FolderHeart, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 
 export function FilesView() {
   const shares = useShares();
@@ -48,7 +47,7 @@ export function FilesView() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* share selector chips */}
       <div className="ld-scroll flex items-center gap-2 overflow-x-auto pb-1">
         {list.map((share) => (
@@ -56,7 +55,7 @@ export function FilesView() {
             key={share.id}
             onClick={() => setActiveId(share.id)}
             className={cn(
-              "flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-medium transition-all",
+              "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[13px] font-medium transition-all",
               share.id === active.id
                 ? "border-primary/60 bg-accent text-accent-foreground"
                 : "border-border bg-card text-muted-foreground hover:bg-muted"
@@ -84,17 +83,7 @@ export function FilesView() {
         </Button>
       </div>
 
-      <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
-        <Badge variant="outline" className="shrink-0 rounded-lg font-semibold">
-          {active.access === "read" ? "Read only" : "Read & write"}
-        </Badge>
-        <span className="min-w-0">
-          You're browsing <span className="truncate font-medium text-foreground">“{active.name}”</span> on
-          your computer — changes appear instantly for all devices.
-        </span>
-      </div>
-
-      <div className="rounded-2xl border border-border/60 bg-background/40 p-3 sm:p-4">
+      <div className="rounded-2xl border border-border/60 bg-background/40 p-2 sm:p-4">
         <FileBrowser
           key={active.id + (filesTarget?.nonce ?? 0)}
           shareId={active.id}

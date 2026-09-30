@@ -7,6 +7,12 @@ const nextConfig: NextConfig = {
   },
   reactStrictMode: false,
   /**
+   * sharp must stay an external runtime dependency: bundling it breaks the
+   * native bindings in standalone/tauri builds, which silently killed all
+   * server-side thumbnails ("icons instead of previews").
+   */
+  serverExternalPackages: ["sharp"],
+  /**
    * Hosted websites live at /sites/{slug}/ — the trailing slash matters because
    * user HTML references assets relatively ("assets/style.css"). Next's default
    * trailing-slash normalization would break them, so it is disabled here.

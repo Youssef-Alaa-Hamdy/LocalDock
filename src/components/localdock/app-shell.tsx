@@ -166,26 +166,20 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
 
       {/* ---------------- Main column ---------------- */}
       <div className="flex min-h-screen w-full flex-col lg:pl-60">
-        {/* Topbar */}
+        {/* Topbar — desktop keeps the roomy bar; phones get ONE slim row */}
         <header className="sticky top-0 z-20 border-b border-border/70 bg-background/85 backdrop-blur-xl">
-          <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
-            {/* Mobile brand + nav */}
-            <div className="flex items-center gap-2 lg:hidden">
-              <LogoMark className="size-8 rounded-lg" />
-              <span className="text-sm font-bold tracking-tight">LocalDock</span>
-            </div>
-
-            <div className="hidden min-w-0 flex-1 lg:block">
+          {/* Desktop */}
+          <div className="hidden items-center gap-3 px-6 py-3 lg:flex">
+            <div className="min-w-0 flex-1">
               <h1 className="truncate text-[15px] font-semibold tracking-tight">
                 {NAV.find((n) => n.key === view)?.label}
               </h1>
             </div>
-
             <div className="ml-auto flex items-center gap-2">
               {system.isLoading ? (
                 <Skeleton className="h-8 w-36 rounded-full" />
               ) : (
-                <div className="hidden items-center gap-2 sm:flex">
+                <div className="flex items-center gap-2">
                   <Pill
                     ok={online}
                     icon={<StatusDot ok={online} />}
@@ -205,57 +199,67 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
                   />
                 </div>
               )}
-              {mounted && (
-                <>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    className="size-9 rounded-xl lg:hidden"
-                    onClick={() => go("settings")}
-                    aria-label="Settings"
-                  >
-                    <Settings className="size-4" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    className="size-9 rounded-xl lg:hidden"
-                    onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                    aria-label="Toggle theme"
-                  >
-                    {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-                  </Button>
-                </>
-              )}
             </div>
           </div>
 
-          {/* Mobile bottom-tab nav */}
-          <nav
-            className="flex items-center justify-around border-t border-border/60 px-2 pb-[max(env(safe-area-inset-bottom),6px)] pt-1.5 lg:hidden"
-            aria-label="Mobile"
-          >
-            {NAV.slice(0, 6).map((item) => {
-              const active = view === item.key;
-              return (
-                <button
-                  key={item.key}
-                  onClick={() => go(item.key)}
-                  className={cn(
-                    "flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[10px] font-medium transition-colors",
-                    active ? "text-primary" : "text-muted-foreground"
-                  )}
-                  aria-current={active ? "page" : undefined}
+          {/* Mobile — a single compact row: brand + icon tabs + actions (~48px
+              total instead of the old two-deck header) */}
+          <div className="flex items-center gap-1 px-2 py-1.5 lg:hidden">
+            <LogoMark className="size-7 shrink-0 rounded-lg" />
+            <nav className="flex min-w-0 flex-1 items-center justify-around" aria-label="Mobile">
+              {NAV.slice(0, 6).map((item) => {
+                const active = view === item.key;
+                return (
+                  <button
+                    key={item.key}
+                    onClick={() => go(item.key)}
+                    className={cn(
+                      "relative flex items-center justify-center rounded-lg p-2 transition-colors",
+                      active ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                    )}
+                    aria-current={active ? "page" : undefined}
+                    aria-label={item.label}
+                    title={item.label}
+                  >
+                    <item.icon className="size-5" strokeWidth={active ? 2.2 : 1.8} />
+                    {item.key === "transfers" && activeCount > 0 && (
+                      <span className="absolute right-0 top-0.5 flex min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[8px] font-bold leading-none text-primary-foreground">
+                        {activeCount}
+                      </span>
+                    )}
+                    {active && (
+                      <span className="absolute -bottom-0.5 size-1 rounded-full bg-primary" aria-hidden />
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+            {mounted && (
+              <>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-8 shrink-0 rounded-lg"
+                  onClick={() => go("settings")}
+                  aria-label="Settings"
                 >
-                  <item.icon className="size-5" strokeWidth={active ? 2.2 : 1.8} />
-                  {item.label}
-                </button>
-              );
-            })}
-          </nav>
+                  <Settings className="size-4" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-8 shrink-0 rounded-lg"
+                  onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                  aria-label="Toggle theme"
+                >
+                  {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+                </Button>
+              </>
+            )}
+          </div>
         </header>
 
-        <main className="flex-1 px-4 pb-28 pt-5 sm:px-6 lg:pb-10">
+        <main className="flex-1 px-3 pb-24 pt-3 sm:px-6 sm:pt-5 lg:pb-10">
           <div className="mx-auto w-full max-w-6xl">
             {view === "dashboard" && <DashboardView />}
             {view === "shares" && <SharesView />}

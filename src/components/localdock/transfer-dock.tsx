@@ -42,7 +42,7 @@ export function TransferDock() {
       exit={{ opacity: 0, y: 24 }}
       transition={{ type: "spring", stiffness: 320, damping: 30 }}
       className={cn(
-        "fixed inset-x-3 bottom-20 z-40 mx-auto max-w-xl overflow-hidden rounded-2xl border border-border bg-card/95 shadow-pop backdrop-blur-xl lg:inset-x-auto lg:right-6 lg:bottom-6 lg:mx-0",
+        "fixed inset-x-3 bottom-3 z-40 mx-auto max-w-xl overflow-hidden rounded-2xl border border-border bg-card/95 shadow-pop backdrop-blur-xl lg:inset-x-auto lg:right-6 lg:bottom-6 lg:mx-0",
         !connected && "border-warning/50"
       )}
       role="region"
@@ -51,7 +51,7 @@ export function TransferDock() {
       {/* div (not button): it contains interactive controls — nested buttons are invalid HTML */}
       <div
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left"
+        className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left"
         role="button"
         aria-expanded={expanded}
         tabIndex={0}
@@ -59,7 +59,7 @@ export function TransferDock() {
           if (e.key === "Enter" || e.key === " ") setExpanded((v) => !v);
         }}
       >
-        <div className="relative flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <div className="relative flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <ArrowLeftRight className="size-4" />
           {activeCount > 0 && (
             <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
@@ -69,16 +69,16 @@ export function TransferDock() {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-sm font-semibold">
+            <span className="truncate text-[13px] font-semibold">
               {active.length > 0
                 ? `Transferring ${visibleItems.length} item${visibleItems.length === 1 ? "" : "s"}`
                 : "Attention needed"}
             </span>
-            <span className="tnum text-xs font-semibold text-muted-foreground">
+            <span className="tnum shrink-0 text-[11px] font-semibold text-muted-foreground">
               {speed > 0 ? formatSpeed(speed) : ""}
             </span>
           </div>
-          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
+          <div className="mt-1 h-0.5 overflow-hidden rounded-full bg-muted">
             <div
               className="h-full rounded-full bg-primary transition-[width] duration-300"
               style={{ width: `${overall}%` }}
@@ -88,7 +88,7 @@ export function TransferDock() {
         <Button
           size="icon"
           variant="ghost"
-          className="size-8 rounded-lg"
+          className="size-7 shrink-0 rounded-lg"
           onClick={(e) => {
             e.stopPropagation();
             setExpanded((v) => !v);

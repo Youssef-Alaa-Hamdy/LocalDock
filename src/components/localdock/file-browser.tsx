@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FileEntry, TransferActivity } from "@/lib/localdock/types";
 import { Api, getClientId } from "@/lib/localdock/client/api";
-import { thumbSrc } from "@/lib/localdock/client/media";
+import {
+  serverThumb,
+  markServerMiss,
+  fullImageSrc,
+  cachedVideoFrame,
+  grabVideoFrame,
+} from "@/lib/localdock/client/thumbs-client";
 import {
   transfers,
   useTransfers,
@@ -46,11 +52,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Check,
+  ChevronDown,
   ChevronRight,
   Copy,
   FileArchive,
@@ -65,13 +73,12 @@ import {
   Image as ImageIcon,
   List,
   Loader2,
-  Minus,
   MonitorSmartphone,
   MoreVertical,
   Package,
   Pencil,
   Play,
-  Plus,
+  Scaling,
   Search,
   Smartphone,
   Trash2,
@@ -91,6 +98,14 @@ type SortKey = "name" | "size" | "modified";
 const TILE_KEY = "localdock.tileSize";
 const TILE_MIN = 96;
 const TILE_MAX = 280;
+const TILE_DEFAULT = 160;
+/** One-tap presets inside the icon-size popover (Explorer-style zoom stops). */
+const TILE_PRESETS: { label: string; v: number }[] = [
+  { label: "S", v: 96 },
+  { label: "M", v: 144 },
+  { label: "L", v: 192 },
+  { label: "XL", v: 256 },
+];
 
 /** Directory fingerprint used for live refresh (count + total size + newest mtime). */
 function fingerprintOf(entries: FileEntry[]): string {
@@ -166,7 +181,8 @@ export function FileBrowser({
   const [newFolderName, setNewFolderName] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [tile, setTile] = useState(160);
+  const [tile, setTile] = useState(TILE_DEFAULT);
+  const [remoteOpen, setRemoteOpen] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
   const refresh = useRefresh();
 
@@ -180,6 +196,7 @@ export function FileBrowser({
     setTile(clamped);
     window.localStorage.setItem(TILE_KEY, String(clamped));
   };
+  const tilePct = Math.round((tile / TILE_DEFAULT) * 100);
 
   /* ---------- live cross-device transfer activity ---------- */
   const [activity, setActivity] = useState<TransferActivity[]>([]);
@@ -531,8 +548,8 @@ export function FileBrowser({
         if (e.dataTransfer.files?.length) uploadFiles(e.dataTransfer.files);
       }}
     >
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Toolbar — two slim rows: path/status, then controls. Nothing floats. */}
+      <div className="flex items-center gap-2">
         {/* breadcrumbs */}
         <nav aria-label="Breadcrumb" className="ld-scroll flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto text-sm">
           {crumbs.map((c, i) => (
@@ -557,96 +574,143 @@ export function FileBrowser({
           ))}
         </nav>
 
-        <div className="flex items-center gap-1.5">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search…"
-              className="h-9 w-36 rounded-xl pl-8 sm:w-48"
-              aria-label="Search files"
-            />
-            {query && (
-              <button
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                onClick={() => setQuery("")}
-                aria-label="Clear search"
-              >
-                <X className="size-3.5" />
-              </button>
-            )}
-          </div>
+        {/* desktop status cluster */}
+        <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+          {serverSearch === false && searchResults !== null && (
+            <span className="font-medium text-primary">search results</span>
+          )}
+          {!writable && (
+            <span className="rounded-full bg-muted px-2 py-0.5 font-semibold">Read only</span>
+          )}
+          <span className="tnum hidden sm:inline">
+            {visible.length} item{visible.length === 1 ? "" : "s"} · {formatBytes(totalSize)}
+          </span>
+          {!searchActive && (
+            <span
+              className="hidden items-center gap-1.5 sm:flex"
+              title="This folder refreshes automatically"
+            >
+              <span className="size-1.5 rounded-full bg-success dot-pulse" />
+              Live
+            </span>
+          )}
+        </div>
+      </div>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+      {/* controls row — search grows, everything else is a compact icon */}
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <div className="relative min-w-0 flex-1 sm:max-w-56">
+          <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search…"
+            className="h-9 w-full rounded-xl pl-8"
+            aria-label="Search files"
+          />
+          {query && (
+            <button
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
+        </div>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="outline"
+              className="size-9 shrink-0 rounded-xl"
+              aria-label="Sort options"
+              title="Sort"
+            >
+              {sort === "name" ? (
+                sortAsc ? <ArrowUpAZ className="size-4" /> : <ArrowDownAZ className="size-4" />
+              ) : (
+                sortAsc ? <CalendarArrowUp className="size-4" /> : <CalendarArrowDown className="size-4" />
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="rounded-xl">
+            <DropdownMenuItem onClick={() => { setSort("name"); setSortAsc(true); }}>
+              <ArrowUpAZ className="size-4" /> Name (A→Z)
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { setSort("name"); setSortAsc(false); }}>
+              <ArrowDownAZ className="size-4" /> Name (Z→A)
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { setSort("modified"); setSortAsc(false); }}>
+              <CalendarArrowDown className="size-4" /> Newest first
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { setSort("modified"); setSortAsc(true); }}>
+              <CalendarArrowUp className="size-4" /> Oldest first
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => { setSort("size"); setSortAsc(false); }}>
+              <Package className="size-4" /> Largest first
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { setSort("size"); setSortAsc(true); }}>
+              <Package className="size-4" /> Smallest first
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <div className="flex shrink-0 overflow-hidden rounded-xl border border-border">
+          <button
+            onClick={() => setView("grid")}
+            className={cn("p-2 transition-colors", view === "grid" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted")}
+            aria-label="Grid view"
+          >
+            <Grid2X2 className="size-4" />
+          </button>
+          <button
+            onClick={() => setView("list")}
+            className={cn("p-2 transition-colors", view === "list" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted")}
+            aria-label="List view"
+          >
+            <List className="size-4" />
+          </button>
+        </div>
+
+        {/* Explorer-style icon-size zoom — one compact button everywhere,
+            opens presets + slider in a popover (fits any narrow screen). */}
+        {view === "grid" && (
+          <Popover>
+            <PopoverTrigger asChild>
               <Button
                 size="icon"
                 variant="outline"
-                className="size-9 rounded-xl"
-                aria-label="Sort options"
-                title="Sort"
+                className="size-9 shrink-0 rounded-xl"
+                aria-label="Icon size"
+                title="Icon size"
               >
-                {sort === "name" ? (
-                  sortAsc ? <ArrowUpAZ className="size-4" /> : <ArrowDownAZ className="size-4" />
-                ) : (
-                  sortAsc ? <CalendarArrowUp className="size-4" /> : <CalendarArrowDown className="size-4" />
-                )}
+                <Scaling className="size-4" />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="rounded-xl">
-              <DropdownMenuItem onClick={() => { setSort("name"); setSortAsc(true); }}>
-                <ArrowUpAZ className="size-4" /> Name (A→Z)
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => { setSort("name"); setSortAsc(false); }}>
-                <ArrowDownAZ className="size-4" /> Name (Z→A)
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => { setSort("modified"); setSortAsc(false); }}>
-                <CalendarArrowDown className="size-4" /> Newest first
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => { setSort("modified"); setSortAsc(true); }}>
-                <CalendarArrowUp className="size-4" /> Oldest first
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => { setSort("size"); setSortAsc(false); }}>
-                <Package className="size-4" /> Largest first
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => { setSort("size"); setSortAsc(true); }}>
-                <Package className="size-4" /> Smallest first
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <div className="flex overflow-hidden rounded-xl border border-border">
-            <button
-              onClick={() => setView("grid")}
-              className={cn("p-2 transition-colors", view === "grid" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted")}
-              aria-label="Grid view"
-            >
-              <Grid2X2 className="size-4" />
-            </button>
-            <button
-              onClick={() => setView("list")}
-              className={cn("p-2 transition-colors", view === "list" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted")}
-              aria-label="List view"
-            >
-              <List className="size-4" />
-            </button>
-          </div>
-
-          {/* Explorer-style icon-size zoom (grid view only) */}
-          {view === "grid" && (
-            <div
-              className="flex items-center gap-1 rounded-xl border border-border px-1.5"
-              title="Icon size"
-            >
-              <button
-                onClick={() => changeTile(tile - 16)}
-                className="p-1.5 text-muted-foreground transition-colors hover:text-foreground"
-                aria-label="Smaller icons"
-              >
-                <Minus className="size-3.5" />
-              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-60 rounded-xl p-3">
+              <div className="flex items-center justify-between text-xs font-semibold">
+                <span>Icon size</span>
+                <span className="tnum text-muted-foreground">{tilePct}%</span>
+              </div>
+              <div className="mt-2 grid grid-cols-4 gap-1">
+                {TILE_PRESETS.map((p) => (
+                  <button
+                    key={p.v}
+                    onClick={() => changeTile(p.v)}
+                    className={cn(
+                      "rounded-lg border px-1 py-1.5 text-[11px] font-semibold transition-colors",
+                      tile === p.v
+                        ? "border-primary/60 bg-accent text-accent-foreground"
+                        : "border-border text-muted-foreground hover:bg-muted"
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
               <input
                 type="range"
                 min={TILE_MIN}
@@ -654,47 +718,57 @@ export function FileBrowser({
                 step={8}
                 value={tile}
                 onChange={(e) => changeTile(Number(e.target.value))}
-                className="ld-zoom w-16 sm:w-24"
+                className="ld-zoom mt-3 w-full"
                 aria-label="Grid icon size"
               />
-              <button
-                onClick={() => changeTile(tile + 16)}
-                className="p-1.5 text-muted-foreground transition-colors hover:text-foreground"
-                aria-label="Larger icons"
-              >
-                <Plus className="size-3.5" />
-              </button>
-            </div>
-          )}
-        </div>
+            </PopoverContent>
+          </Popover>
+        )}
+
+        {/* core actions — always visible in the toolbar, nothing floating */}
+        {writable && (
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            <Button size="sm" className="h-9 rounded-xl px-2.5 sm:px-3" onClick={() => uploadRef.current?.click()}>
+              <Upload className="size-4" />
+              <span className="hidden sm:inline">Upload</span>
+            </Button>
+            <Button
+              size="icon"
+              variant="outline"
+              className="size-9 rounded-xl"
+              onClick={() => setNewFolderOpen(true)}
+              aria-label="New folder"
+              title="New folder"
+            >
+              <FolderPlus className="size-4" />
+            </Button>
+          </div>
+        )}
       </div>
 
-      {/* info strip */}
-      <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-        <span>
+      {/* mobile status line (desktop shows the same info beside breadcrumbs) */}
+      <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground sm:hidden">
+        <span className="tnum">
           {visible.length} item{visible.length === 1 ? "" : "s"} · {formatBytes(totalSize)}
         </span>
         {serverSearch === false && searchResults !== null && (
           <span className="font-medium text-primary">search results</span>
         )}
         {!writable && (
-          <span className="rounded-full bg-muted px-2 py-0.5 font-semibold">Read only</span>
+          <span className="rounded-full bg-muted px-1.5 py-0.5 font-semibold">Read only</span>
         )}
         {!searchActive && (
-          <span
-            className="ml-auto flex shrink-0 items-center gap-1.5"
-            title="This folder refreshes automatically"
-          >
+          <span className="ml-auto flex shrink-0 items-center gap-1">
             <span className="size-1.5 rounded-full bg-success dot-pulse" />
             Live
           </span>
         )}
       </div>
 
-      {/* Live upload tray — per-file progress, speed & ETA, professional-grade */}
+      {/* Live upload tray — slim one-liners, thin bars, zero clutter */}
       {activeUploads.length > 0 && (
-        <div className="rise mt-2 overflow-hidden rounded-2xl border border-primary/25 bg-accent/30">
-          <div className="flex items-center gap-2 px-3.5 pb-1 pt-2.5">
+        <div className="rise mt-1.5 overflow-hidden rounded-xl border border-primary/25 bg-accent/30">
+          <div className="flex items-center gap-2 px-3 pb-1 pt-2">
             <ArrowUpFromLine className="size-3.5 shrink-0 text-primary" />
             <p className="min-w-0 truncate text-xs font-semibold">
               Uploading {activeUploads.length} file{activeUploads.length === 1 ? "" : "s"}
@@ -707,19 +781,19 @@ export function FileBrowser({
               {Math.round(uploadsPct)}%
             </span>
           </div>
-          <div className="relative mx-3.5 mb-1 h-1 overflow-hidden rounded-full bg-muted">
+          <div className="relative mx-3 h-0.5 overflow-hidden rounded-full bg-muted">
             <div
               className="h-full rounded-full bg-primary transition-[width] duration-300"
               style={{ width: `${uploadsPct}%` }}
             />
           </div>
-          <div className="space-y-2.5 px-3.5 pb-3 pt-1.5">
+          <div className="space-y-2 px-3 pb-2 pt-1.5">
             {activeUploads.slice(0, 4).map((i) => {
               const p = pct(i.transferred, i.size);
               const inThisFolder = i.shareId === shareId && i.path === path;
               return (
                 <div key={i.id}>
-                  <div className="flex min-w-0 items-center gap-2 text-xs">
+                  <div className="flex min-w-0 items-center gap-2 text-[11px]">
                     {i.status === "active" ? (
                       <Loader2 className="size-3 shrink-0 animate-spin text-primary" />
                     ) : (
@@ -727,16 +801,17 @@ export function FileBrowser({
                     )}
                     <span className="min-w-0 truncate font-medium">{i.name}</span>
                     {!inThisFolder && (
-                      <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      <span className="shrink-0 rounded-md bg-muted px-1 py-0.5 text-[9px] font-medium text-muted-foreground">
                         {i.shareId === shareId ? `/${i.path}` : i.shareName}
                       </span>
                     )}
                     <span className="tnum ml-auto shrink-0 font-semibold">
-                      {Math.round(p)}%
+                      {i.status === "queued" ? "Queued" : `${Math.round(p)}%`}
                       {i.status === "active" && i.speedBps > 0 && (
-                        <span className="ml-1.5 font-normal text-muted-foreground">
-                          {formatSpeed(i.speedBps)}
-                        </span>
+                        <span className="ml-1 font-normal text-muted-foreground">{formatSpeed(i.speedBps)}</span>
+                      )}
+                      {i.status === "active" && i.etaSec !== null && (
+                        <span className="ml-1 font-normal text-muted-foreground">ETA {formatEta(i.etaSec)}</span>
                       )}
                     </span>
                     <button
@@ -749,26 +824,14 @@ export function FileBrowser({
                   </div>
                   <Progress
                     value={p}
-                    className="mt-1 h-1 overflow-hidden rounded-full"
+                    className="mt-0.5 h-0.5 overflow-hidden rounded-full"
                     aria-label={`${i.name} upload progress ${Math.round(p)}%`}
                   />
-                  <div className="mt-0.5 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
-                    <span className="tnum">
-                      {formatBytes(i.transferred)} / {formatBytes(i.size)}
-                    </span>
-                    <span>
-                      {i.status === "queued"
-                        ? "Waiting in queue…"
-                        : i.etaSec !== null
-                          ? `ETA ${formatEta(i.etaSec)}`
-                          : ""}
-                    </span>
-                  </div>
                 </div>
               );
             })}
             {activeUploads.length > 4 && (
-              <p className="text-[11px] font-medium text-muted-foreground">
+              <p className="text-[10px] font-medium text-muted-foreground">
                 + {activeUploads.length - 4} more — open the Transfer Center for details
               </p>
             )}
@@ -776,85 +839,111 @@ export function FileBrowser({
         </div>
       )}
 
-      {/* Live transfers on OTHER devices — uploads + downloads, same picture
-          every device sees ("iPhone is downloading vacation.mp4 45%") */}
-      {remoteActivity.length > 0 && (
-        <div className="rise mt-2 overflow-hidden rounded-2xl border border-border/70 bg-muted/30">
-          <div className="flex items-center gap-2 px-3.5 pb-1 pt-2.5">
-            <MonitorSmartphone className="size-3.5 shrink-0 text-muted-foreground" />
-            <p className="min-w-0 truncate text-xs font-semibold">
-              {remoteActivity.length === 1
-                ? "1 transfer on another device"
-                : `${remoteActivity.length} transfers on other devices`}
-            </p>
-            <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
-              <span className="size-1.5 rounded-full bg-success dot-pulse" />
-              live
-            </span>
-          </div>
-          <div className="space-y-2.5 px-3.5 pb-3 pt-1.5">
-            {remoteActivity.slice(0, 5).map((a) => {
-              const p = a.size > 0 ? Math.min(100, (a.transferred / a.size) * 100) : a.status === "done" ? 100 : 0;
-              const speed = speedRef.current.get(a.id)?.bytes ?? 0;
-              const verb = a.kind === "upload" ? "Uploading" : "Downloading";
-              const inThisFolder = a.kind === "upload" && (a.dirPath ?? "") === path;
-              return (
-                <div key={a.id}>
-                  <div className="flex min-w-0 items-center gap-2 text-xs">
-                    <span
-                      className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[9px] font-black uppercase text-primary"
-                      title={a.device}
-                      aria-hidden
-                    >
-                      {a.device.slice(0, 1)}
-                    </span>
-                    {a.kind === "upload" ? (
-                      <ArrowUpFromLine className="size-3 shrink-0 text-primary" />
-                    ) : (
-                      <ArrowDownToLine className="size-3 shrink-0 text-muted-foreground" />
-                    )}
-                    <span className="min-w-0 truncate font-medium">
-                      <span className="text-muted-foreground">{a.device} · </span>
-                      {a.status === "done" ? `${verb.replace("ing", "ed")} ` : a.status === "failed" ? "Failed: " : `${verb} `}
-                      {a.name}
-                    </span>
-                    {!inThisFolder && a.kind === "upload" && (a.dirPath ?? "") !== "" && (
-                      <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                        /{a.dirPath}
-                      </span>
-                    )}
-                    <span className="tnum ml-auto shrink-0 font-semibold">
-                      {a.status === "done" ? (
-                        <span className="text-success">Done</span>
-                      ) : a.status === "failed" ? (
-                        <span className="text-destructive">Failed</span>
-                      ) : (
-                        <>
-                          {Math.round(p)}%
-                          {speed > 0 && (
-                            <span className="ml-1.5 font-normal text-muted-foreground">{formatSpeed(speed)}</span>
-                          )}
-                        </>
-                      )}
-                    </span>
-                  </div>
-                  {a.status === "active" && (
-                    <div className="relative mt-1 h-1 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="progress-shimmer h-full rounded-full bg-primary/80 transition-[width] duration-500"
-                        style={{ width: `${Math.max(2, p)}%` }}
-                      />
-                    </div>
+      {/* Live transfers on OTHER devices — collapsed to one quiet line by
+          default ("iPhone · downloading vacation.mp4 · 45%"), tap to expand. */}
+      {remoteActivity.length > 0 && (() => {
+        const first = remoteActivity[0];
+        const firstP = first.size > 0 ? Math.min(100, (first.transferred / first.size) * 100) : first.status === "done" ? 100 : 0;
+        const firstVerb = first.kind === "upload" ? "uploading" : "downloading";
+        const summary =
+          remoteActivity.length === 1
+            ? `${first.device} · ${
+                first.status === "done"
+                  ? `finished ${firstVerb.replace("ing", "")}`
+                  : first.status === "failed"
+                    ? `failed ${firstVerb}`
+                    : `${firstVerb}`
+              } ${first.name}${first.status === "active" ? ` · ${Math.round(firstP)}%` : ""}`
+            : `${remoteActivity.length} transfers on other devices`;
+        return (
+          <div className="rise mt-1.5 overflow-hidden rounded-xl border border-border/70 bg-muted/30">
+            <button
+              type="button"
+              onClick={() => setRemoteOpen((v) => !v)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left"
+              aria-expanded={remoteOpen || remoteActivity.length === 1}
+            >
+              <MonitorSmartphone className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate text-xs font-semibold">{summary}</span>
+              <span className="flex shrink-0 items-center gap-1 text-[10px] font-medium text-muted-foreground">
+                <span className="size-1.5 rounded-full bg-success dot-pulse" />
+                live
+              </span>
+              {remoteActivity.length > 1 && (
+                <ChevronDown
+                  className={cn(
+                    "size-3.5 shrink-0 text-muted-foreground transition-transform",
+                    remoteOpen && "rotate-180"
                   )}
-                </div>
-              );
-            })}
-            {remoteActivity.length > 5 && (
-              <p className="text-[11px] font-medium text-muted-foreground">+ {remoteActivity.length - 5} more</p>
+                />
+              )}
+            </button>
+            {(remoteOpen || remoteActivity.length === 1) && (
+              <div className="space-y-2 px-3 pb-2 pt-0.5">
+                {remoteActivity.slice(0, 5).map((a) => {
+                  const p = a.size > 0 ? Math.min(100, (a.transferred / a.size) * 100) : a.status === "done" ? 100 : 0;
+                  const speed = speedRef.current.get(a.id)?.bytes ?? 0;
+                  const verb = a.kind === "upload" ? "Uploading" : "Downloading";
+                  const inThisFolder = a.kind === "upload" && (a.dirPath ?? "") === path;
+                  return (
+                    <div key={a.id}>
+                      <div className="flex min-w-0 items-center gap-2 text-[11px]">
+                        <span
+                          className="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-[8px] font-black uppercase text-primary"
+                          title={a.device}
+                          aria-hidden
+                        >
+                          {a.device.slice(0, 1)}
+                        </span>
+                        {a.kind === "upload" ? (
+                          <ArrowUpFromLine className="size-3 shrink-0 text-primary" />
+                        ) : (
+                          <ArrowDownToLine className="size-3 shrink-0 text-muted-foreground" />
+                        )}
+                        <span className="min-w-0 truncate font-medium">
+                          <span className="text-muted-foreground">{a.device} · </span>
+                          {a.status === "done" ? `${verb.replace("ing", "ed")} ` : a.status === "failed" ? "Failed: " : `${verb} `}
+                          {a.name}
+                        </span>
+                        {!inThisFolder && a.kind === "upload" && (a.dirPath ?? "") !== "" && (
+                          <span className="shrink-0 rounded-md bg-muted px-1 py-0.5 text-[9px] font-medium text-muted-foreground">
+                            /{a.dirPath}
+                          </span>
+                        )}
+                        <span className="tnum ml-auto shrink-0 font-semibold">
+                          {a.status === "done" ? (
+                            <span className="text-success">Done</span>
+                          ) : a.status === "failed" ? (
+                            <span className="text-destructive">Failed</span>
+                          ) : (
+                            <>
+                              {Math.round(p)}%
+                              {speed > 0 && (
+                                <span className="ml-1 font-normal text-muted-foreground">{formatSpeed(speed)}</span>
+                              )}
+                            </>
+                          )}
+                        </span>
+                      </div>
+                      {a.status === "active" && (
+                        <div className="relative mt-0.5 h-0.5 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="progress-shimmer h-full rounded-full bg-primary/80 transition-[width] duration-500"
+                            style={{ width: `${Math.max(2, p)}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {remoteActivity.length > 5 && (
+                  <p className="text-[10px] font-medium text-muted-foreground">+ {remoteActivity.length - 5} more</p>
+                )}
+              </div>
             )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Content — full page scroll on phones, capped nested scroller on desktop */}
       <div className={cn("ld-scroll mt-3 flex-1 overflow-y-auto pb-24", embedded ? "" : "lg:max-h-[62vh]")}>
@@ -885,7 +974,12 @@ export function FileBrowser({
         ) : view === "grid" ? (
           <div
             className="grid gap-2"
-            style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tile}px, 1fr))` }}
+            style={
+              {
+                "--tile": `${tile}px`,
+                gridTemplateColumns: `repeat(auto-fill, minmax(${tile}px, 1fr))`,
+              } as React.CSSProperties
+            }
           >
             {visible.map((entry) => (
               <GridCard
@@ -949,39 +1043,6 @@ export function FileBrowser({
         )}
       </div>
 
-      {/* Toolbar (bottom): upload + new folder.
-          Hidden while a multi-selection is active (the selection bar owns the
-          bottom area), and stacked above the TransferDock whenever that dock
-          is visible — no overlaps on phones or desktop. */}
-      {selected.size === 0 && (
-        <div
-          className={cn(
-            "pointer-events-none fixed left-0 right-0 z-30 flex justify-center px-4 lg:left-auto lg:right-10",
-            dockVisible ? "bottom-40 lg:bottom-24" : "bottom-24 lg:bottom-6"
-          )}
-        >
-          <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border border-border bg-card/95 p-1.5 shadow-pop backdrop-blur-xl">
-            {writable && (
-              <>
-                <Button size="sm" className="h-9 rounded-xl" onClick={() => uploadRef.current?.click()}>
-                  <Upload className="size-4" />
-                  Upload
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-9 rounded-xl"
-                  onClick={() => setNewFolderOpen(true)}
-                >
-                  <FolderPlus className="size-4" />
-                  New folder
-                </Button>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
       <input
         ref={uploadRef}
         type="file"
@@ -1007,8 +1068,8 @@ export function FileBrowser({
       {selected.size > 0 && (
         <div
           className={cn(
-            "fixed inset-x-0 bottom-40 z-40 mx-auto flex w-fit rise lg:bottom-6",
-            dockVisible && "lg:bottom-24"
+            "fixed inset-x-0 bottom-4 z-40 mx-auto flex w-fit rise lg:bottom-6",
+            dockVisible && "bottom-20 lg:bottom-24"
           )}
         >
           <div className="flex max-w-[calc(100vw-1.5rem)] flex-wrap items-center justify-center gap-2 rounded-2xl border border-border bg-foreground text-background shadow-pop px-3 py-2">
@@ -1154,10 +1215,33 @@ export function FileBrowser({
 /* ---------------- item renderers ---------------- */
 
 /**
- * Thumbnail tile for images (sharp) and videos (ffmpeg frame grab), with a
- * clean fallback to the type icon whenever no thumbnail exists (404).
- * Loads lazily — a folder of documents never requests a single thumbnail.
+ * Thumbnail tile for images (sharp) and videos (ffmpeg frame grab).
+ * If the server can't generate one (missing binary, unsupported codec, 404)
+ * the client renders the thumbnail itself — full-image downscale for photos,
+ * a hidden-<video> canvas grab for clips — and the type icon is the very
+ * last resort. Generation happens lazily; document folders never ask.
  */
+type ThumbPhase = "loading" | "server" | "recovering" | "full" | "frame" | "icon";
+
+async function thumbFallback(
+  shareId: string,
+  relPath: string,
+  category: "image" | "video",
+  set: (phase: ThumbPhase, src: string) => void
+) {
+  markServerMiss(shareId, relPath); // stop re-asking a server that can't do it
+  if (category === "image") {
+    try {
+      set("full", await fullImageSrc(shareId, relPath));
+    } catch {
+      set("icon", "");
+    }
+    return;
+  }
+  const frame = await grabVideoFrame(shareId, relPath);
+  set(frame ? "frame" : "icon", frame ?? "");
+}
+
 function EntryThumb({
   shareId,
   relPath,
@@ -1171,29 +1255,64 @@ function EntryThumb({
 }) {
   const thumbable =
     entry.kind === "file" && (entry.category === "image" || entry.category === "video");
+  const category = entry.category === "video" ? "video" : "image";
   // Resolved thumbnail, tagged with the path it belongs to — a path change
   // instantly "clears" the tile without any synchronous state reset.
-  const [loaded, setLoaded] = useState<{ rel: string; src: string; failed: boolean } | null>(null);
-  const valid = loaded && loaded.rel === relPath && !loaded.failed ? loaded.src : null;
+  const [loaded, setLoaded] = useState<{ rel: string; phase: ThumbPhase; src: string } | null>(null);
+  const valid =
+    loaded &&
+    loaded.rel === relPath &&
+    (loaded.phase === "server" || loaded.phase === "full" || loaded.phase === "frame")
+      ? loaded.src
+      : null;
+  const busy =
+    loaded &&
+    loaded.rel === relPath &&
+    (loaded.phase === "loading" || loaded.phase === "recovering");
 
   useEffect(() => {
     if (!thumbable) return;
     let ok = true;
-    void thumbSrc(shareId, relPath, 480)
-      .then((u) => {
-        if (ok) setLoaded({ rel: relPath, src: u, failed: false });
-      })
-      .catch(() => {
-        if (ok) setLoaded({ rel: relPath, src: "", failed: true });
-      });
+    const set = (phase: ThumbPhase, src: string) => {
+      if (ok) setLoaded({ rel: relPath, phase, src });
+    };
+    const cached = category === "video" ? cachedVideoFrame(shareId, relPath) : undefined;
+    if (cached) {
+      set("frame", cached);
+      return;
+    }
+    set("loading", "");
+    void serverThumb(shareId, relPath, 480).then((r) => {
+      if (r.kind === "url") set("server", r.url);
+      else void thumbFallback(shareId, relPath, category, set);
+    });
     return () => {
       ok = false;
     };
-  }, [thumbable, shareId, relPath]);
+  }, [thumbable, shareId, relPath, category]);
 
-  if (!thumbable || !valid) {
-    return <FileIcon entry={entry} className={className} />;
+  /* Server thumbnail failed → chain the client-side fallbacks. */
+  useEffect(() => {
+    if (loaded?.rel !== relPath || loaded.phase !== "recovering") return;
+    let ok = true;
+    void thumbFallback(shareId, relPath, category, (phase, src) => {
+      if (ok) setLoaded({ rel: relPath, phase, src });
+    });
+    return () => {
+      ok = false;
+    };
+  }, [loaded, relPath, shareId, category]);
+
+  if (!thumbable) return <FileIcon entry={entry} className={className} />;
+  if (busy) {
+    return (
+      <span
+        className={cn("shrink-0 animate-pulse overflow-hidden rounded-xl bg-muted/70", className)}
+        aria-hidden
+      />
+    );
   }
+  if (!valid) return <FileIcon entry={entry} className={className} />;
   return (
     <span className={cn("relative flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted", className)}>
       <img
@@ -1201,10 +1320,17 @@ function EntryThumb({
         alt=""
         loading="lazy"
         decoding="async"
-        onError={() => setLoaded((l) => (l ? { ...l, failed: true } : l))}
+        onError={() =>
+          setLoaded((l) => {
+            if (!l || l.rel !== relPath) return l;
+            if (l.phase === "server") return { ...l, phase: "recovering", src: "" };
+            if (l.phase === "full" || l.phase === "frame") return { ...l, phase: "icon", src: "" };
+            return l;
+          })
+        }
         className="size-full object-cover"
       />
-      {entry.category === "video" && (
+      {category === "video" && (
         <span className="absolute inset-0 flex items-center justify-center bg-black/25">
           <span className="flex size-6 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm">
             <Play className="size-3 translate-x-px fill-current" />
@@ -1243,7 +1369,7 @@ function GridCard({
   return (
     <div
       className={cn(
-        "group relative flex cursor-pointer flex-col items-center gap-2 rounded-2xl border p-3 text-center transition-all",
+        "group relative flex cursor-pointer flex-col items-center rounded-xl border p-1.5 text-center transition-all",
         selected
           ? "border-primary bg-accent/50 ring-1 ring-primary/40"
           : "border-border/70 bg-card hover:border-primary/40 hover:shadow-card"
@@ -1259,8 +1385,10 @@ function GridCard({
     >
       <span
         className={cn(
-          "absolute left-2 top-2 size-4 rounded border bg-card transition-opacity",
-          selected ? "border-primary bg-primary opacity-100" : "border-border opacity-0 group-hover:opacity-100"
+          "absolute left-1.5 top-1.5 z-10 size-4 rounded border bg-card transition-opacity",
+          selected
+            ? "border-primary bg-primary opacity-100"
+            : "border-border opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
         )}
         onClick={(e) => {
           e.stopPropagation();
@@ -1268,21 +1396,33 @@ function GridCard({
         }}
         aria-hidden
       />
-      <span className="flex h-20 w-full items-center justify-center">
+      {/* Media box scales WITH the zoom slider — the thumbnail itself grows,
+          the padding stays fixed. This is the Explorer behaviour. */}
+      <span
+        className="flex w-full items-center justify-center overflow-hidden rounded-lg bg-muted/40"
+        style={{ height: "calc(var(--tile) * 0.72)" }}
+      >
         <EntryThumb
           entry={entry}
           shareId={shareId}
           relPath={relPath}
-          className={canThumb ? "h-20 w-full max-w-36 rounded-xl" : "size-12 [&>svg]:size-6"}
+          className={
+            canThumb
+              ? "size-full rounded-lg"
+              : "size-[calc(var(--tile)*0.42)] rounded-xl [&>svg]:size-[55%]"
+          }
         />
       </span>
-      <p className="w-full truncate text-xs font-medium" title={entry.name}>
+      <p
+        className="mt-1.5 h-8 w-full break-words px-0.5 text-[11px] font-medium leading-4 line-clamp-2"
+        title={entry.name}
+      >
         {entry.name}
       </p>
-      <p className="text-[10px] text-muted-foreground">
+      <p className="pb-0.5 text-[10px] leading-4 text-muted-foreground">
         {entry.kind === "dir" ? "Folder" : formatBytes(entry.size)}
       </p>
-      <div className="absolute right-1 top-1">
+      <div className="absolute right-0.5 top-0.5 z-10">
         <RowMenu
           entry={entry}
           onOpen={onOpen}
@@ -1397,7 +1537,7 @@ function RowMenu({
         <Button
           size="icon"
           variant="ghost"
-          className="size-7 rounded-lg opacity-0 transition-opacity hover:bg-muted focus:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+          className="size-7 rounded-lg opacity-70 transition-opacity hover:bg-muted focus:opacity-100 md:opacity-0 md:group-hover:opacity-100 data-[state=open]:opacity-100"
           aria-label={`Actions for ${entry.name}`}
           onClick={(e) => e.stopPropagation()}
         >
