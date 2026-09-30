@@ -27,15 +27,15 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "rise flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 bg-card/60 px-6 py-14 text-center",
+        "rise flex w-full min-w-0 max-w-full flex-col items-center justify-center overflow-hidden rounded-2xl border border-dashed border-border/80 bg-card/60 px-4 py-10 text-center sm:px-6 sm:py-14",
         className
       )}
     >
-      <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-accent/60 text-accent-foreground">
+      <div className="mb-4 flex size-14 shrink-0 items-center justify-center rounded-2xl bg-accent/60 text-accent-foreground">
         <Icon className="size-6" strokeWidth={1.8} />
       </div>
-      <h3 className="text-lg font-semibold tracking-tight">{title}</h3>
-      <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-muted-foreground whitespace-pre-line">
+      <h3 className="max-w-full break-words text-base font-semibold tracking-tight sm:text-lg">{title}</h3>
+      <p className="mt-1.5 max-w-sm break-words text-xs leading-relaxed text-muted-foreground whitespace-pre-line sm:text-sm">
         {description}
       </p>
       {(actionLabel || secondaryLabel) && (

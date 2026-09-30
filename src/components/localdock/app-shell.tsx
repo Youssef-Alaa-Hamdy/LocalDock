@@ -39,8 +39,8 @@ import {
   Laptop,
   LayoutDashboard,
   Languages,
+  Menu,
   Moon,
-  Ellipsis,
   ArrowLeftRight,
   Settings,
   Sun,
@@ -59,19 +59,9 @@ const NAV: { key: ViewKey; labelKey: "dashboard" | "shares" | "files" | "transfe
   { key: "settings", labelKey: "settings", icon: Settings },
 ];
 
-/** The four primary tabs pinned to the mobile bottom bar; the rest live in "More". */
-type MobileTabKey = "dashboard" | "shares" | "files" | "transfers";
-const MOBILE_TABS: { key: MobileTabKey; icon: typeof Gauge }[] = [
-  { key: "dashboard", icon: LayoutDashboard },
-  { key: "shares", icon: FolderHeart },
-  { key: "files", icon: HardDrive },
-  { key: "transfers", icon: ArrowLeftRight },
-];
-const MORE_ITEMS = NAV.slice(4);
-const MORE_KEYS: ViewKey[] = MORE_ITEMS.map((i) => i.key);
-
 export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
   const { t, locale, setLocale } = useI18n();
+  const isRtl = LOCALES[locale]?.dir === "rtl";
   const view = useNav((s) => s.view);
   const go = useNav((s) => s.go);
   const system = useSystem();
@@ -81,7 +71,7 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
     .filter((i) => i.status === "active")
     .reduce((acc, i) => acc + i.speedBps, 0);
   const { theme, setTheme } = useTheme();
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   // hydration-safe "mounted" flag without setState-in-effect
   const mounted = useSyncExternalStore(
     () => () => undefined,
@@ -232,17 +222,37 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
             </div>
           </div>
 
-          {/* Mobile — slim brand row: status lives in the bottom bar, nav lives
-              in the bottom bar, so this stays uncluttered at every width */}
-          <div className="flex h-12 items-center gap-2 px-3 lg:hidden">
-            <LogoMark className="size-7 shrink-0 rounded-lg" />
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-bold tracking-tight">LocalDock</div>
+          {/* Mobile topbar with Hamburger Drawer Trigger */}
+          <div className="flex h-14 items-center gap-2 px-3 sm:px-4 lg:hidden">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="relative size-9 shrink-0 rounded-xl"
+              onClick={() => setMobileNavOpen(true)}
+              aria-label={t.nav.main}
+            >
+              <Menu className="size-5" />
+              {activeCount > 0 && (
+                <span className="absolute -end-1 -top-1 flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                  {activeCount}
+                </span>
+              )}
+            </Button>
+
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <LogoMark className="size-7 shrink-0 rounded-lg shadow-xs" />
+              <div className="min-w-0">
+                <div className="truncate text-sm font-bold tracking-tight">LocalDock</div>
+                <div className="truncate text-[10px] font-medium text-muted-foreground">
+                  {t.nav[NAV.find((n) => n.key === view)?.labelKey ?? "dashboard"]}
+                </div>
+              </div>
             </div>
+
             {system.isLoading ? (
-              <Skeleton className="h-6 w-24 rounded-full" />
+              <Skeleton className="h-6 w-16 rounded-full" />
             ) : (
-              <span className="flex items-center gap-1.5 rounded-full border border-border/70 bg-card px-2 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm">
+              <span className="flex items-center gap-1.5 rounded-full border border-border/70 bg-card px-2 py-0.5 text-[10px] font-medium text-muted-foreground shadow-xs">
                 <StatusDot ok={online} />
                 {online ? t.status.online : t.status.offline}
               </span>
@@ -269,8 +279,8 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
           </div>
         </header>
 
-        <main className="flex-1 px-3 pb-[calc(5.5rem_+_env(safe-area-inset-bottom))] pt-3 sm:px-6 sm:pt-5 lg:pb-10">
-          <div className="mx-auto w-full max-w-6xl">
+        <main className="safe-page-bottom flex-1 w-full min-w-0 max-w-full px-3 pb-8 pt-3 sm:px-6 sm:pt-5 lg:pb-10">
+          <div className="mx-auto w-full min-w-0 max-w-6xl">
             {view === "dashboard" && <DashboardView />}
             {view === "shares" && <SharesView />}
             {view === "files" && <FilesView />}
@@ -282,66 +292,27 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
         </main>
       </div>
 
-      {/* ---------------- Mobile bottom nav ---------------- */}
-      <nav
-        aria-label={t.nav.mobile}
-        className="ld-bottomnav safe-bottom-nav fixed inset-x-0 bottom-0 z-30 lg:hidden"
-      >
-        <div className="mx-auto grid h-16 max-w-lg grid-cols-5 px-1">
-          {MOBILE_TABS.map((item) => {
-            const active = view === item.key;
-            const label = t.navShort[item.key];
-            return (
-              <button
-                key={item.key}
-                onClick={() => go(item.key)}
-                className={cn(
-                  "ld-bottomnav-item",
-                  active ? "text-primary" : "text-muted-foreground"
-                )}
-                aria-current={active ? "page" : undefined}
-              >
-                <span className="relative">
-                  <item.icon className="size-[22px]" strokeWidth={active ? 2.2 : 1.8} />
-                  {item.key === "transfers" && activeCount > 0 && (
-                    <span className="absolute -end-2 -top-1.5 flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold leading-4 text-primary-foreground">
-                      {activeCount}
-                    </span>
-                  )}
-                </span>
-                <span className="max-w-full truncate text-[10px] font-medium">{label}</span>
-                {active && (
-                  <span className="absolute top-1 size-1 rounded-full bg-primary" aria-hidden />
-                )}
-              </button>
-            );
-          })}
-          {/* More — devices / websites / settings live in a bottom sheet */}
-          <button
-            onClick={() => setMoreOpen(true)}
-            className={cn(
-              "ld-bottomnav-item",
-              MORE_KEYS.includes(view) ? "text-primary" : "text-muted-foreground"
-            )}
-          >
-            <Ellipsis className="size-[22px]" strokeWidth={MORE_KEYS.includes(view) ? 2.2 : 1.8} />
-            <span className="max-w-full truncate text-[10px] font-medium">{t.navShort.more}</span>
-            {MORE_KEYS.includes(view) && (
-              <span className="absolute top-1 size-1 rounded-full bg-primary" aria-hidden />
-            )}
-          </button>
-        </div>
-      </nav>
-
-      {/* More sheet — secondary destinations, native bottom-drawer pattern */}
-      <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+      {/* ---------------- Mobile Sidebar Drawer ---------------- */}
+      <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
         <SheetContent
-          side="bottom"
-          className="rounded-t-2xl px-4 pb-[calc(1.25rem_+_env(safe-area-inset-bottom))]"
+          side={isRtl ? "right" : "left"}
+          className="flex h-full w-[285px] max-w-[85vw] flex-col border-e border-border/70 bg-sidebar p-0 sm:w-[320px]"
         >
-          <SheetTitle className="sr-only">{t.nav.mobile}</SheetTitle>
-          <div className="mx-auto w-full max-w-lg space-y-1.5 pt-1">
-            {MORE_ITEMS.map((item) => {
+          <SheetTitle className="sr-only">{t.nav.main}</SheetTitle>
+          {/* Drawer Header */}
+          <div className="flex items-center gap-3 border-b border-border/60 px-5 py-4">
+            <LogoMark className="size-9 shrink-0 rounded-xl shadow-card" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[15px] font-bold tracking-tight">LocalDock</div>
+              <div className="truncate text-[11px] font-medium text-muted-foreground">
+                {t.brand.tagline}
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation Items (all 7 tabs) */}
+          <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-3" aria-label={t.nav.mobile}>
+            {NAV.map((item) => {
               const active = view === item.key;
               const label = t.nav[item.labelKey];
               return (
@@ -349,32 +320,68 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
                   key={item.key}
                   onClick={() => {
                     go(item.key);
-                    setMoreOpen(false);
+                    setMobileNavOpen(false);
                   }}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "flex w-full items-center gap-3 rounded-2xl border p-3.5 text-start transition-colors",
+                    "group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all text-start",
                     active
-                      ? "border-primary/60 bg-accent/50 text-accent-foreground"
-                      : "border-border hover:bg-muted"
+                      ? "bg-accent text-accent-foreground font-semibold shadow-xs"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
                   )}
                 >
-                  <span
+                  <item.icon
                     className={cn(
-                      "flex size-10 shrink-0 items-center justify-center rounded-xl",
-                      active ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
+                      "size-[18px] shrink-0 transition-transform group-hover:scale-105",
+                      active && "text-primary"
                     )}
-                  >
-                    <item.icon className="size-5" strokeWidth={2} />
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-sm font-semibold">{label}</span>
-                  <ChevronRight className="size-4 shrink-0 text-muted-foreground rtl:rotate-180" />
+                    strokeWidth={active ? 2.2 : 1.8}
+                  />
+                  <span className="flex-1 truncate">{label}</span>
+                  {item.key === "transfers" && activeCount > 0 && (
+                    <span className="tnum shrink-0 rounded-full bg-primary px-2 py-0.5 text-[11px] font-bold text-primary-foreground">
+                      {activeCount}
+                    </span>
+                  )}
                 </button>
               );
             })}
-            <p className="pt-2 text-center text-[11px] text-muted-foreground">
-              {t.brand.localOnly}
-            </p>
+          </nav>
+
+          {/* Mobile Drawer Footer Status */}
+          <div className="border-t border-border/70 p-4">
+            <div className="rounded-2xl border border-border/70 bg-card p-3.5 shadow-card">
+              <div className="flex items-center justify-between">
+                <span className="truncate text-xs font-semibold text-muted-foreground">
+                  {system.data?.serverName ?? t.settings.server}
+                </span>
+                <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground shrink-0">
+                  <StatusDot ok={online} />
+                  {online ? t.status.online : t.status.offline}
+                </span>
+              </div>
+              <div className="mt-2 flex items-baseline gap-1.5">
+                <span className="tnum text-lg font-bold tracking-tight">
+                  {globalSpeed > 0 ? formatSpeed(globalSpeed) : "—"}
+                </span>
+                <span className="text-[11px] text-muted-foreground">{t.status.currentTransfer}</span>
+              </div>
+            </div>
+
+            <div className="mt-3 flex items-center justify-between px-1">
+              <span className="truncate text-[11px] text-muted-foreground">{t.brand.localOnly ?? ""}</span>
+              {mounted && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-7 rounded-lg"
+                  onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                  aria-label={t.status.toggleTheme}
+                >
+                  {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+                </Button>
+              )}
+            </div>
           </div>
         </SheetContent>
       </Sheet>

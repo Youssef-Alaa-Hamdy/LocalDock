@@ -49,28 +49,28 @@ export function DashboardView() {
   const topShares = (shares.data ?? []).slice(0, 4);
 
   return (
-    <div className="space-y-8">
+    <div className="w-full min-w-0 max-w-full space-y-6 sm:space-y-8">
       {/* ---------- Hero ---------- */}
-      <section className="rise relative overflow-hidden rounded-3xl border border-border/70 bg-card p-6 shadow-card sm:p-8">
+      <section className="rise relative w-full min-w-0 max-w-full overflow-hidden rounded-3xl border border-border/70 bg-card p-4 sm:p-8 shadow-card">
         <div className="dot-grid pointer-events-none absolute inset-0 opacity-40" />
-        <div className="relative">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs font-semibold">
+        <div className="relative w-full min-w-0">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
+            <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs font-semibold shrink-0">
               <StatusDot ok={online} />
               {online ? t.dashboard.heroOnline : t.dashboard.heroReconnect}
             </span>
-            <span className="hidden text-xs text-muted-foreground sm:inline">
+            <span className="hidden text-xs text-muted-foreground sm:inline truncate">
               {t.dashboard.heroPrivacy}
             </span>
           </div>
-          <h1 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">
+          <h1 className="mt-4 max-w-full break-words text-xl font-bold tracking-tight sm:text-3xl">
             {t.dashboard.greetingLine(greeting())}
           </h1>
-          <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
+          <p className="mt-2 max-w-xl break-words text-xs sm:text-sm leading-relaxed text-muted-foreground">
             {t.dashboard.heroBody(shares.data?.length ?? 0, system.data?.devicesOnline ?? 0)}
           </p>
 
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mt-6 grid grid-cols-2 gap-2.5 sm:gap-3 sm:grid-cols-4 w-full min-w-0">
             <Stat
               icon={<Laptop className="size-4" />}
               label={t.dashboard.statDevices}
@@ -107,16 +107,16 @@ export function DashboardView() {
       </section>
 
       {/* ---------- Shares ---------- */}
-      <section aria-label={t.dashboard.sharesAria}>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-bold tracking-tight">{t.dashboard.sharesTitle}</h2>
-          <Button variant="ghost" size="sm" className="rounded-xl" onClick={() => go("shares")}>
+      <section className="w-full min-w-0" aria-label={t.dashboard.sharesAria}>
+        <div className="mb-3 flex items-center justify-between gap-2 min-w-0">
+          <h2 className="truncate text-base font-bold tracking-tight">{t.dashboard.sharesTitle}</h2>
+          <Button variant="ghost" size="sm" className="shrink-0 rounded-xl" onClick={() => go("shares")}>
             {t.dashboard.allShares} <ArrowRight className="size-4 rtl:rotate-180" />
           </Button>
         </div>
 
         {shares.isLoading ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-2.5 sm:gap-3 sm:grid-cols-2 xl:grid-cols-4 w-full min-w-0">
             {[...Array(4)].map((_, i) => (
               <Skeleton key={i} className="h-28 rounded-2xl" />
             ))}
@@ -130,30 +130,30 @@ export function DashboardView() {
             onAction={() => setAddOpen(true)}
           />
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-1 gap-2.5 sm:gap-3 sm:grid-cols-2 xl:grid-cols-4 w-full min-w-0">
             {topShares.map((share, idx) => (
               <button
                 key={share.id}
                 onClick={() => openFiles(share.id, "")}
-                className={`card-lift rise rise-${Math.min(idx + 1, 4)} group rounded-2xl border border-border/70 bg-card p-4 text-start shadow-card`}
+                className={`card-lift rise rise-${Math.min(idx + 1, 4)} group w-full min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-card p-3.5 sm:p-4 text-start shadow-card`}
               >
-                <div className="flex items-center gap-3">
-                  <span className="flex size-10 items-center justify-center rounded-xl bg-accent/70 text-accent-foreground transition-transform group-hover:scale-105">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent/70 text-accent-foreground transition-transform group-hover:scale-105">
                     <FolderHeart className="size-5" strokeWidth={1.8} />
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold">{share.name}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="truncate text-xs text-muted-foreground">
                       {formatBytes(share.sizeBytes)} · {share.access === "read" ? t.dashboard.readOnly : t.dashboard.readWrite}
                     </p>
                   </div>
                 </div>
-                <div className="mt-3 flex items-center justify-between text-[11px] font-medium text-muted-foreground">
-                  <span className="flex items-center gap-1.5">
+                <div className="mt-3 flex items-center justify-between gap-2 text-[11px] font-medium text-muted-foreground min-w-0">
+                  <span className="flex items-center gap-1.5 shrink-0 truncate">
                     <StatusDot ok pulse={false} className="bg-success" />
                     {t.dashboard.shared}
                   </span>
-                  <span>{share.guestEnabled ? t.dashboard.guestOn : t.dashboard.devicesOnly}</span>
+                  <span className="truncate text-end">{share.guestEnabled ? t.dashboard.guestOn : t.dashboard.devicesOnly}</span>
                 </div>
               </button>
             ))}
@@ -162,10 +162,11 @@ export function DashboardView() {
       </section>
 
       {/* ---------- Quick actions + Activity ---------- */}
-      <section className="grid gap-6 lg:grid-cols-5">
-        <div className="lg:col-span-2">
-          <h2 className="mb-3 text-base font-bold tracking-tight">{t.dashboard.quickActions}</h2>
-          <div className="grid gap-2.5">
+      {/* ---------- Quick actions + Activity ---------- */}
+      <section className="grid gap-6 lg:grid-cols-5 w-full min-w-0">
+        <div className="lg:col-span-2 w-full min-w-0">
+          <h2 className="mb-3 text-base font-bold tracking-tight truncate">{t.dashboard.quickActions}</h2>
+          <div className="grid gap-2.5 w-full min-w-0">
             <QuickAction
               icon={FolderPlus}
               title={t.dashboard.qaAdd}
@@ -187,27 +188,27 @@ export function DashboardView() {
           </div>
         </div>
 
-        <div className="lg:col-span-3">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-bold tracking-tight">{t.dashboard.recentActivity}</h2>
-            <Button variant="ghost" size="sm" className="rounded-xl" onClick={() => go("settings")}>
+        <div className="lg:col-span-3 w-full min-w-0">
+          <div className="mb-3 flex items-center justify-between gap-2 min-w-0">
+            <h2 className="truncate text-base font-bold tracking-tight">{t.dashboard.recentActivity}</h2>
+            <Button variant="ghost" size="sm" className="shrink-0 rounded-xl" onClick={() => go("settings")}>
               <Activity className="size-4" /> {t.dashboard.system}
             </Button>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-card shadow-card">
+          <div className="w-full min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-card shadow-card">
             {activity.isLoading ? (
-              <div className="space-y-3 p-4">
+              <div className="space-y-3 p-3.5 sm:p-4 w-full min-w-0">
                 {[...Array(4)].map((_, i) => (
                   <Skeleton key={i} className="h-10 rounded-xl" />
                 ))}
               </div>
             ) : (activity.data ?? []).length === 0 ? (
-              <div className="flex items-center gap-3 p-5 text-sm text-muted-foreground">
-                <Activity className="size-4" />
-                {t.dashboard.activityEmpty}
+              <div className="flex items-center gap-3 p-4 sm:p-5 text-sm text-muted-foreground min-w-0">
+                <Activity className="size-4 shrink-0" />
+                <span className="truncate">{t.dashboard.activityEmpty}</span>
               </div>
             ) : (
-              <ul className="divide-y divide-border/60">
+              <ul className="divide-y divide-border/60 w-full min-w-0">
                 {(activity.data ?? []).slice(0, 7).map((entry) => (
                   <ActivityRow key={entry.id} entry={entry} />
                 ))}
@@ -241,20 +242,20 @@ function Stat({
   return (
     <Comp
       onClick={onClick}
-      className={`rounded-2xl border border-border/70 bg-background/60 p-3.5 text-start backdrop-blur transition-all ${
+      className={`w-full min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-background/60 p-3 sm:p-3.5 text-start backdrop-blur transition-all ${
         onClick ? "card-lift cursor-pointer" : ""
       }`}
     >
-      <div className="flex items-center gap-2 text-muted-foreground">
-        {icon}
-        <span className="text-[11px] font-semibold uppercase tracking-wide">{label}</span>
+      <div className="flex items-center gap-1.5 sm:gap-2 text-muted-foreground min-w-0">
+        <span className="shrink-0">{icon}</span>
+        <span className="truncate text-[10px] sm:text-[11px] font-semibold uppercase tracking-wide">{label}</span>
       </div>
       {loading ? (
-        <Skeleton className="mt-2 h-6 w-20 rounded-lg" />
+        <Skeleton className="mt-2 h-6 w-16 sm:w-20 rounded-lg" />
       ) : (
-        <p className="tnum mt-1.5 text-lg font-bold tracking-tight">{value}</p>
+        <p className="tnum mt-1.5 truncate text-base sm:text-lg font-bold tracking-tight">{value}</p>
       )}
-      <p className="text-[11px] text-muted-foreground">{sub}</p>
+      <p className="truncate text-[10px] sm:text-[11px] text-muted-foreground">{sub}</p>
     </Comp>
   );
 }
@@ -273,13 +274,13 @@ function QuickAction({
   return (
     <button
       onClick={onClick}
-      className="card-lift group flex items-center gap-3.5 rounded-2xl border border-border/70 bg-card p-3.5 text-start shadow-card"
+      className="card-lift group flex w-full min-w-0 items-center gap-3 sm:gap-3.5 overflow-hidden rounded-2xl border border-border/70 bg-card p-3 sm:p-3.5 text-start shadow-card"
     >
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent/70 text-accent-foreground transition-transform group-hover:scale-105">
-        <Icon className="size-5" strokeWidth={1.8} />
+      <span className="flex size-9 sm:size-10 shrink-0 items-center justify-center rounded-xl bg-accent/70 text-accent-foreground transition-transform group-hover:scale-105">
+        <Icon className="size-4 sm:size-5" strokeWidth={1.8} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-semibold">{title}</span>
+        <span className="block truncate text-sm font-semibold">{title}</span>
         <span className="block truncate text-xs text-muted-foreground">{desc}</span>
       </span>
       <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5" />
@@ -311,12 +312,12 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
   const conf = ACTIVITY_ICONS[entry.type] ?? ACTIVITY_ICONS["file.uploaded"];
   const Icon = conf.icon;
   return (
-    <li className="flex items-center gap-3 px-4 py-3">
+    <li className="flex w-full min-w-0 items-center gap-2.5 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3">
       <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${conf.tone}`}>
         <Icon className="size-4" strokeWidth={1.8} />
       </span>
-      <p className="min-w-0 flex-1 truncate text-sm">{activityMessage(entry, t.activity)}</p>
-      <span className="shrink-0 text-[11px] text-muted-foreground">{timeAgo(entry.at)}</span>
+      <p className="min-w-0 flex-1 truncate text-xs sm:text-sm">{activityMessage(entry, t.activity)}</p>
+      <span className="shrink-0 text-[10px] sm:text-[11px] text-muted-foreground">{timeAgo(entry.at)}</span>
     </li>
   );
 }
