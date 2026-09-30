@@ -17,10 +17,14 @@ export async function GET(req: Request, ctx: Ctx) {
   const result = await listDir(guard.share.rootPath, dir);
   if ("error" in result) {
     if (result.error === "not-found")
-      return jsonError(404, "not-found", "This folder no longer exists on disk.");
+      return jsonError(404, "not-found", "This folder no longer exists on disk.", {
+      key: "folderNotOnDisk",
+    });
     if (result.error === "permission")
-      return jsonError(403, "permission", "The server cannot read this folder.");
-    return jsonError(400, "bad-path", "Invalid folder path.");
+      return jsonError(403, "permission", "The server cannot read this folder.", {
+      key: "permission",
+    });
+    return jsonError(400, "bad-path", "Invalid folder path.", { key: "badPath" });
   }
 
   // Cheap change-detection mode: the file browser polls this every few seconds

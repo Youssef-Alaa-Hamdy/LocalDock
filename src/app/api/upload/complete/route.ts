@@ -14,7 +14,8 @@ interface Body {
 
 export async function POST(req: Request) {
   const body = await readJsonBody<Body>(req);
-  if (!body?.uploadId) return jsonError(400, "bad-body", "uploadId is required.");
+  if (!body?.uploadId)
+    return jsonError(400, "bad-body", "uploadId is required.", { key: "badBody" });
 
   const { getUploadSessionShareId } = await import("@/lib/localdock/uploads-sessions");
   const shareId = getUploadSessionShareId(body.uploadId);
@@ -29,7 +30,11 @@ export async function POST(req: Request) {
     await logActivity(
       "file.uploaded",
       `Received “${info.finalName}” into “${guard.share.name}”`,
-      { bytes: info.size, sha256: info.sha256 ?? null }
+      { bytes: info.size, sha256: info.sha256 ?? null },
+      {
+        key: "fileUploaded",
+        params: { name: info.finalName, share: guard.share.name },
+      }
     );
     // refresh share stats in the background so sizes stay truthful
     void (async () => {
@@ -50,14 +55,26 @@ export async function POST(req: Request) {
       return jsonOk({ incomplete: true, missingChunks: missing ?? [] });
     if (msg === "checksum-mismatch") {
       trackUploadDone(body.uploadId, shareId, "failed");
-      return jsonError(422, "checksum-mismatch", "The uploaded file failed integrity verification.");
+      return jsonError(
+        422,
+        "checksum-mismatch",
+        "The uploaded file failed integrity verification.",
+        { key: "checksumMismatch" }
+      );
     }
     if (msg === "size-mismatch")
-      return jsonError(422, "size-mismatch", "The file on disk does not match the announced size.");
+      return jsonError(
+        422,
+        "size-mismatch",
+        "The file on disk does not match the announced size.",
+        { key: "sizeMismatch" }
+      );
     if (msg === "session-not-found")
       return jsonError(404, "session-not-found", "Upload session expired or canceled.");
     if (msg === "share-gone")
       return jsonError(410, "share-gone", "The shared folder was removed during upload.");
-    return jsonError(500, "complete-failed", "The upload could not be finalized.");
+    return jsonError(500, "complete-failed", "The upload could not be finalized.", {
+        key: "completeFailed",
+      });
   }
 }

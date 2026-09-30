@@ -22,14 +22,19 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if (denied) return denied;
   const { id } = await ctx.params;
   const body = await readJsonBody<Body>(req);
-  if (!body) return jsonError(400, "bad-body", "Invalid request body.");
+  if (!body)
+    return jsonError(400, "bad-body", "Invalid request body.", { key: "badBody" });
 
   const before = getWebsite(id);
   const site = await updateWebsite(id, body);
-  if (!site) return jsonError(404, "not-found", "Website not found.");
+  if (!site)
+    return jsonError(404, "not-found", "Website not found.", { key: "notFound" });
 
   if (before?.enabled && site.enabled === false) {
-    await logActivity("website.stopped", `Website “${site.name}” stopped`);
+    await logActivity("website.stopped", `Website “${site.name}” stopped`, undefined, {
+    key: "websiteStopped",
+    params: { name: site.name },
+  });
   }
   return jsonOk({ website: site });
 }
@@ -39,8 +44,14 @@ export async function DELETE(req: Request, ctx: Ctx) {
   if (denied) return denied;
   const { id } = await ctx.params;
   const site = getWebsite(id);
-  if (!site) return jsonError(404, "not-found", "Website not found.");
+  if (!site)
+    return jsonError(404, "not-found", "Website not found.", { key: "notFound" });
   await deleteWebsite(id);
-  await logActivity("website.removed", `Removed website “${site.name}” (files kept on disk)`);
+  await logActivity(
+    "website.removed",
+    `Removed website “${site.name}” (files kept on disk)`,
+    undefined,
+    { key: "websiteRemoved", params: { name: site.name } }
+  );
   return jsonOk({ ok: true });
 }

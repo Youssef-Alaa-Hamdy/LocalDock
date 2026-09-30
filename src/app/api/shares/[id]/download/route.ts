@@ -23,7 +23,7 @@ export async function GET(req: Request, ctx: Ctx) {
   const rel = url.searchParams.get("path") ?? "";
   const resolved = resolveSafeInside(guard.share.rootPath, rel);
   if (!resolved.ok || !resolved.abs) {
-    return jsonError(400, "bad-path", "Invalid file path.");
+    return jsonError(400, "bad-path", "Invalid file path.", { key: "badPath" });
   }
 
   const resp = await streamFileResponse(resolved.abs, {
@@ -41,7 +41,14 @@ export async function GET(req: Request, ctx: Ctx) {
       void logActivity(
         "file.downloaded",
         `Downloaded “${path.basename(resolved.abs)}” from “${guard.share.name}”`,
-        { bytes: len }
+        { bytes: len },
+        {
+          key: "fileDownloaded",
+          params: {
+            name: path.basename(resolved.abs),
+            share: guard.share.name,
+          },
+        }
       );
     }
   }

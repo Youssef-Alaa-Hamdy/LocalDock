@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { transfers } from "@/lib/localdock/client/transfer-engine";
+import { useI18n } from "@/lib/localdock/i18n";
 
 /** One live transfer row — shared by the dock and the Transfer Center. */
 export function TransferRow({
@@ -28,6 +29,7 @@ export function TransferRow({
   item: TransferItem;
   compact?: boolean;
 }) {
+  const { t } = useI18n();
   const percent = pct(item.transferred, item.size);
   const active = item.status === "active";
   const done = item.status === "completed";
@@ -96,7 +98,7 @@ export function TransferRow({
                   failed && "[&>div]:bg-destructive",
                   done && "[&>div]:bg-success"
                 )}
-                aria-label={`${item.name} progress ${Math.round(percent)}%`}
+                aria-label={t.transferRow.progressAria(item.name, Math.round(percent))}
               />
             </div>
 
@@ -108,21 +110,21 @@ export function TransferRow({
                       {formatSpeed(item.speedBps)}
                     </span>
                     {item.etaSec !== null && (
-                      <span> · ETA {formatEta(item.etaSec)}</span>
+                      <span> · {t.transferRow.eta(formatEta(item.etaSec))}</span>
                     )}
                     {(item.connections ?? 0) > 1 && (
                       <span className="font-semibold text-primary">
-                        {" "}· {item.connections} links
+                        {" "}· {t.transferRow.links(item.connections ?? 0)}
                       </span>
                     )}
                   </>
                 )}
-                {queued && "Waiting in queue…"}
-                {paused && (item.error ?? "Paused")}
-                {failed && (item.error ?? "Failed")}
+                {queued && t.transferRow.queued}
+                {paused && (item.error ?? t.transferRow.paused)}
+                {failed && (item.error ?? t.transferRow.failed)}
                 {done &&
-                  (item.hashHex ? "Transferred & verified" : "Completed")}
-                {item.status === "canceled" && "Canceled"}
+                  (item.hashHex ? t.transferRow.verified : t.transferRow.completed)}
+                {item.status === "canceled" && t.transferRow.canceled}
               </span>
               <span className="shrink-0 text-[11px] text-muted-foreground">
                 {item.shareName}
@@ -131,8 +133,8 @@ export function TransferRow({
 
             {needsFile && (
               <label className="mt-2 inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground transition-transform hover:scale-[1.02]">
-                <Play className="size-3.5" />
-                Pick the file to resume
+                <Play className="size-3.5 rtl:-scale-x-100" />
+                {t.transferRow.pickFile}
                 <input
                   type="file"
                   className="hidden"
@@ -152,27 +154,27 @@ export function TransferRow({
           {!compact && (
             <div className="flex shrink-0 items-center gap-1">
               {active && (
-                <ActionBtn label="Pause" onClick={() => transfers.pause(item.id)}>
+                <ActionBtn label={t.transferRow.pause} onClick={() => transfers.pause(item.id)}>
                   <Pause className="size-4" />
                 </ActionBtn>
               )}
               {paused && !needsFile && (
-                <ActionBtn label="Resume" onClick={() => transfers.resume(item.id)}>
+                <ActionBtn label={t.transferRow.resume} onClick={() => transfers.resume(item.id)}>
                   <Play className="size-4" />
                 </ActionBtn>
               )}
               {failed && (
-                <ActionBtn label="Retry" onClick={() => transfers.retry(item.id)}>
+                <ActionBtn label={t.transferRow.retry} onClick={() => transfers.retry(item.id)}>
                   <RotateCcw className="size-4" />
                 </ActionBtn>
               )}
               {item.status !== "canceled" && item.status !== "completed" && (
-                <ActionBtn label="Cancel" onClick={() => void transfers.cancel(item.id)} danger>
+                <ActionBtn label={t.transferRow.cancel} onClick={() => void transfers.cancel(item.id)} danger>
                   <X className="size-4" />
                 </ActionBtn>
               )}
               {(done || item.status === "canceled") && (
-                <ActionBtn label="Dismiss" onClick={() => transfers.dismiss(item.id)}>
+                <ActionBtn label={t.transferRow.dismiss} onClick={() => transfers.dismiss(item.id)}>
                   <X className="size-4" />
                 </ActionBtn>
               )}
@@ -195,6 +197,7 @@ function ActionBtn({
   danger?: boolean;
   children: React.ReactNode;
 }) {
+  const { rtl } = useI18n();
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -211,7 +214,7 @@ function ActionBtn({
           {children}
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="left" className="text-xs">
+      <TooltipContent side={rtl ? "right" : "left"} className="text-xs">
         {label}
       </TooltipContent>
     </Tooltip>

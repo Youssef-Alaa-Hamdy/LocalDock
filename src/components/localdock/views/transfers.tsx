@@ -5,33 +5,29 @@ import { TransferRow } from "../transfer-row";
 import { EmptyState } from "../empty-state";
 import { ArrowLeftRight, CheckCircle2 } from "lucide-react";
 import { formatSpeed } from "@/lib/localdock/client/format";
-
-const SECTIONS: {
-  title: string;
-  hint: string;
-  test: (s: string) => boolean;
-}[] = [
-  { title: "Active", hint: "Moving right now", test: (s) => s === "active" || s === "queued" },
-  { title: "Paused", hint: "Resume anytime", test: (s) => s === "paused" },
-  { title: "Completed", hint: "Verified & done", test: (s) => s === "completed" },
-  { title: "Failed", hint: "One click to retry", test: (s) => s === "failed" || s === "canceled" },
-];
+import { useI18n, Ltr } from "@/lib/localdock/i18n/provider";
 
 export function TransfersView() {
+  const { t } = useI18n();
   const items = useTransfers((s) => s.items);
   const sorted = [...items].sort((a, b) => b.createdAt - a.createdAt);
   const totalActiveSpeed = items
     .filter((i) => i.status === "active")
     .reduce((acc, i) => acc + i.speedBps, 0);
 
+  const SECTIONS = [
+    { label: t.transfersView.active, hint: t.transfersView.activeHint, test: (s: string) => s === "active" || s === "queued" },
+    { label: t.transfersView.paused, hint: t.transfersView.pausedHint, test: (s: string) => s === "paused" },
+    { label: t.transfersView.completed, hint: t.transfersView.completedHint, test: (s: string) => s === "completed" },
+    { label: t.transfersView.failed, hint: t.transfersView.failedHint, test: (s: string) => s === "failed" || s === "canceled" },
+  ];
+
   if (items.length === 0) {
     return (
       <EmptyState
         icon={ArrowLeftRight}
-        title="No transfers yet"
-        description={
-          "Upload something from your phone or download a file here.\nLive progress will show up in this center."
-        }
+        title={t.transfersView.emptyTitle}
+        description={t.transfersView.emptyDesc}
       />
     );
   }
@@ -42,19 +38,19 @@ export function TransfersView() {
         <p className="text-sm text-muted-foreground">
           {totalActiveSpeed > 0 ? (
             <>
-              Moving at{" "}
-              <span className="tnum font-semibold text-foreground">
+              {t.transfersView.movingAtPrefix}{" "}
+              <Ltr className="tnum font-semibold text-foreground">
                 {formatSpeed(totalActiveSpeed)}
-              </span>{" "}
-              on your local network
+              </Ltr>{" "}
+              {t.transfersView.movingAtSuffix}
             </>
           ) : (
-            "Everything is settled."
+            t.transfersView.allSettled
           )}
         </p>
         {items.some((i) => ["completed", "canceled"].includes(i.status)) && (
           <span className="text-xs text-muted-foreground">
-            {items.filter((i) => i.status === "completed").length} completed this session
+            {t.transfersView.nCompleted(items.filter((i) => i.status === "completed").length)}
           </span>
         )}
       </div>
@@ -63,9 +59,9 @@ export function TransfersView() {
         const list = sorted.filter((i) => section.test(i.status));
         if (list.length === 0) return null;
         return (
-          <section key={section.title} aria-label={section.title}>
+          <section key={section.label} aria-label={section.label}>
             <div className="mb-2.5 flex items-baseline gap-2">
-              <h2 className="text-sm font-bold tracking-tight">{section.title}</h2>
+              <h2 className="text-sm font-bold tracking-tight">{section.label}</h2>
               <span className="tnum text-xs text-muted-foreground">{list.length}</span>
               <span className="text-xs text-muted-foreground">· {section.hint}</span>
             </div>
@@ -81,7 +77,7 @@ export function TransfersView() {
       {items.every((i) => i.status === "completed") && (
         <div className="flex items-center justify-center gap-2 rounded-2xl border border-success/25 bg-success/[0.06] py-3 text-sm font-medium text-success">
           <CheckCircle2 className="size-4" />
-          All transfers completed successfully
+          {t.transfersView.allDone}
         </div>
       )}
     </div>

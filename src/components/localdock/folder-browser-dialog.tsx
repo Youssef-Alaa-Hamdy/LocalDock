@@ -25,6 +25,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { isHostMachine } from "@/lib/localdock/client/host";
+import { useI18n } from "@/lib/localdock/i18n";
 
 interface DirEntry {
   name: string;
@@ -55,6 +56,7 @@ export function FolderBrowserDialog({
   onSelect: (absPath: string) => void;
   requireIndexHtml?: boolean;
 }) {
+  const { t } = useI18n();
   const [cwd, setCwd] = useState("");
   const [parent, setParent] = useState<string | null>(null);
   const [dirs, setDirs] = useState<DirEntry[]>([]);
@@ -102,13 +104,13 @@ export function FolderBrowserDialog({
     const name = newName.trim();
     if (!name) return;
     if (!cwd) {
-      toast.error("Please enter a drive or folder first before creating a subfolder.");
+      toast.error(t.folderBrowser.needPathToast);
       return;
     }
     setCreating(true);
     try {
       await Api.fsCreate(cwd, name, mode);
-      toast.success(`Folder “${name}” created`);
+      toast.success(t.folderBrowser.createdToast(name));
       setNewName("");
       await load(cwd);
     } catch (e) {
@@ -140,8 +142,7 @@ export function FolderBrowserDialog({
         <div className="overflow-hidden rounded-2xl border border-border">
           {remoteDevice && (
             <p className="border-b border-border bg-warning/10 px-3 py-2 text-xs leading-relaxed text-warning-foreground">
-              These are the drives of the computer running LocalDock. To add folders from THIS
-              device, use “Add Folder” in Shares — it uploads from your device instead.
+              {t.folderBrowser.hostNote}
             </p>
           )}
           <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-3 py-2.5">
@@ -154,13 +155,13 @@ export function FolderBrowserDialog({
                 void load(parent ?? "");
               }}
             >
-              <ArrowLeft className="size-4" />
+              <ArrowLeft className="size-4 rtl:rotate-180" />
             </Button>
             <span className="min-w-0 flex-1 truncate text-sm font-medium">
               {cwd ? (
-                <span className="font-mono text-xs">{cwd}</span>
+                <span className="font-mono text-xs" dir="ltr">{cwd}</span>
               ) : (
-                <span className="text-muted-foreground">💻 This PC (Drives & Folders)</span>
+                <span className="text-muted-foreground">{t.folderBrowser.thisPc}</span>
               )}
             </span>
             {loading && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
@@ -168,12 +169,12 @@ export function FolderBrowserDialog({
 
           <div className="border-b border-border px-3 py-2">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
-                placeholder="Filter folders…"
-                className="h-9 rounded-xl border-none bg-transparent pl-9 shadow-none focus-visible:ring-0"
+                placeholder={t.folderBrowser.filterPlaceholder}
+                className="h-9 rounded-xl border-none bg-transparent ps-9 shadow-none focus-visible:ring-0"
               />
             </div>
           </div>
@@ -183,7 +184,7 @@ export function FolderBrowserDialog({
               <div className="flex flex-col items-center gap-2 py-10 text-center">
                 <FolderOpen className="size-7 text-muted-foreground/50" />
                 <p className="text-sm text-muted-foreground">
-                  {filter ? "No folders match your filter." : "This folder is empty."}
+                  {filter ? t.folderBrowser.noMatch : t.folderBrowser.empty}
                 </p>
               </div>
             ) : (
@@ -192,7 +193,7 @@ export function FolderBrowserDialog({
                   <li key={d.path}>
                     <button
                       onClick={() => void load(d.path)}
-                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors hover:bg-accent/60"
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-start text-sm transition-colors hover:bg-accent/60"
                     >
                       {getItemIcon(d.kind)}
                       <span className="truncate font-medium">{d.name}</span>
@@ -209,7 +210,7 @@ export function FolderBrowserDialog({
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && createFolder()}
-                placeholder="New folder name…"
+                placeholder={t.folderBrowser.newNamePlaceholder}
                 className="h-9 flex-1 rounded-xl"
               />
               <Button
@@ -224,7 +225,7 @@ export function FolderBrowserDialog({
                 ) : (
                   <FolderPlus className="size-4" />
                 )}
-                Create
+                {t.common.create}
               </Button>
             </div>
           )}
@@ -232,14 +233,15 @@ export function FolderBrowserDialog({
 
         {requireIndexHtml && !canConfirm && (
           <p className="rounded-xl bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
-            Select a folder that contains an{" "}
-            <code className="font-mono font-semibold">index.html</code> file.
+            {t.folderBrowser.indexNote.split("index.html")[0]}
+            <code className="font-mono font-semibold" dir="ltr">index.html</code>
+            {t.folderBrowser.indexNote.split("index.html")[1]}
           </p>
         )}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t.common.cancel}
           </Button>
           <Button
             className={cn(!canConfirm && "pointer-events-none opacity-50")}

@@ -27,7 +27,8 @@ export async function POST(req: Request) {
   const denied = await requireOwner(req);
   if (denied) return denied;
   const body = await readJsonBody<Body>(req);
-  if (!body?.name?.trim()) return jsonError(400, "bad-name", "Give the website a name.");
+  if (!body?.name?.trim())
+    return jsonError(400, "bad-name", "Give the website a name.", { key: "needWebsiteName" });
 
   // Desktop shell: a real folder anywhere on this machine.
   // Web: the server-side browser, bounded to the LocalDock home.
@@ -39,7 +40,9 @@ export async function POST(req: Request) {
   } else {
     const resolved = resolveSafe(SITES_DIR, body.homeDirRel ?? "");
     if (!resolved.ok || !resolved.abs)
-      return jsonError(400, "bad-path", "Choose the website folder from the browser.");
+      return jsonError(400, "bad-path", "Choose the website folder from the browser.", {
+      key: "chooseFolder",
+    });
     rootAbs = resolved.abs;
   }
 
@@ -47,7 +50,7 @@ export async function POST(req: Request) {
   try {
     const stat = await fsp.stat(rootAbs);
     if (!stat.isDirectory())
-      return jsonError(400, "not-a-dir", "The selected path is not a folder.");
+      return jsonError(400, "not-a-dir", "The selected path is not a folder.", { key: "notDir" });
     await fsp.access(path.join(rootAbs, "index.html"));
   } catch {
     return jsonError(
@@ -58,7 +61,9 @@ export async function POST(req: Request) {
   }
 
   if (body.slug && !validateSlug(slugify(body.slug))) {
-    return jsonError(400, "bad-slug", "Use letters, numbers and dashes for the address.");
+    return jsonError(400, "bad-slug", "Use letters, numbers and dashes for the address.", {
+      key: "badAddress",
+    });
   }
 
   const site = await createWebsite({
@@ -66,6 +71,11 @@ export async function POST(req: Request) {
     rootPath: rootAbs,
     slug: body.slug,
   });
-  await logActivity("website.hosted", `Website “${site.name}” is live`, { slug: site.slug });
+  await logActivity(
+    "website.hosted",
+    `Website “${site.name}” is live`,
+    { slug: site.slug },
+    { key: "websiteHosted", params: { name: site.name } }
+  );
   return jsonOk({ website: site }, 201);
 }

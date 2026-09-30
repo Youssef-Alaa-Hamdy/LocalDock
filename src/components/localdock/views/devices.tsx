@@ -6,6 +6,8 @@ import { useDevices, useRefresh } from "../data-hooks";
 import { EmptyState } from "../empty-state";
 import { QrDialog } from "../qr-dialog";
 import { timeAgo } from "@/lib/localdock/client/format";
+import { useI18n } from "@/lib/localdock/i18n/provider";
+import { apiErrorMessage } from "@/lib/localdock/client/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -49,6 +51,7 @@ export function AddDeviceDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
+  const { t } = useI18n();
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [code, setCode] = useState<string | null>(null);
   const [claimUrl, setClaimUrl] = useState("");
@@ -65,7 +68,7 @@ export function AddDeviceDialog({
       setClaimUrl(res.claimUrl);
       setExpiresAt(res.expiresAt);
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(apiErrorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -88,11 +91,11 @@ export function AddDeviceDialog({
     <QrDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Add Device"
+      title={t.devicesView.title}
       description={
         expired
-          ? "This code has expired — generate a fresh one."
-          : "Open LocalDock on your phone, choose “Scan QR”, and point the camera here."
+          ? t.devicesView.qrExpired
+          : t.devicesView.qrHint
       }
       qrUrl={qrUrl ?? "/api/qr?text=loading"}
       link={claimUrl}
@@ -104,6 +107,7 @@ export function AddDeviceDialog({
 /* ------------------------------------------------------------------ */
 
 export function DevicesView({ onPairSuccess }: { onPairSuccess?: () => void }) {
+  const { t } = useI18n();
   const devices = useDevices();
   const refresh = useRefresh();
   const [addOpen, setAddOpen] = useState(false);
@@ -115,13 +119,9 @@ export function DevicesView({ onPairSuccess }: { onPairSuccess?: () => void }) {
     const code = manualCode.trim().toUpperCase();
     if (!code) return;
     try {
-      const name =
-        navigator.platform || navigator.userAgent.includes("Android")
-          ? "This browser"
-          : "This browser";
       const res = await Api.pairClaim({
         code,
-        deviceName: `${name}`,
+        deviceName: t.devicesView.thisBrowser,
         platform: /android/i.test(navigator.userAgent)
           ? "android"
           : /iphone|ipad/i.test(navigator.userAgent)
@@ -130,11 +130,11 @@ export function DevicesView({ onPairSuccess }: { onPairSuccess?: () => void }) {
       });
       const { saveDeviceToken } = await import("@/lib/localdock/client/api");
       saveDeviceToken(res.deviceToken);
-      toast.success(`Paired with “${res.server.serverName}” — you're a trusted device now`);
+      toast.success(t.devicesView.pairedToast(res.server.serverName));
       setManualCode("");
       onPairSuccess?.();
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(apiErrorMessage(e));
     }
   };
 
@@ -143,12 +143,12 @@ export function DevicesView({ onPairSuccess }: { onPairSuccess?: () => void }) {
     setRevoking(true);
     try {
       await Api.revokeDevice(revokeTarget.id);
-      toast.success(`“${revokeTarget.name}” can no longer access this computer`);
+      toast.success(t.devicesView.revokeToast(revokeTarget.name));
       refresh.refreshDevices();
       refresh.refreshSystem();
       refresh.refreshActivity();
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(apiErrorMessage(e));
     } finally {
       setRevoking(false);
       setRevokeTarget(null);
@@ -159,14 +159,14 @@ export function DevicesView({ onPairSuccess }: { onPairSuccess?: () => void }) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold tracking-tight">Devices</h2>
+          <h2 className="text-lg font-bold tracking-tight">{t.devicesView.title2}</h2>
           <p className="text-sm text-muted-foreground">
-            Trusted devices allowed to reach your shares.
+            {t.devicesView.subtitle}
           </p>
         </div>
         <Button className="rounded-xl" onClick={() => setAddOpen(true)}>
           <QrCode className="size-4" />
-          Add Device
+          {t.devicesView.addDevice}
         </Button>
       </div>
 
@@ -174,18 +174,19 @@ export function DevicesView({ onPairSuccess }: { onPairSuccess?: () => void }) {
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border/70 bg-card p-3.5 shadow-card">
         <ScanLine className="size-4 text-muted-foreground" />
         <p className="text-xs text-muted-foreground">
-          No camera? Enter the 6-character code shown on the computer:
+          {t.devicesView.cameraHint}
         </p>
         <input
           value={manualCode}
           onChange={(e) => setManualCode(e.target.value.toUpperCase())}
-          placeholder="ABC123"
+          placeholder={t.devicesView.codePlaceholder}
           maxLength={6}
+          dir="ltr"
           className="w-24 rounded-xl border border-border bg-background px-3 py-1.5 text-center font-mono text-sm font-bold uppercase tracking-[0.25em]"
-          aria-label="Pairing code"
+          aria-label={t.devicesView.codeAria}
         />
         <Button size="sm" variant="outline" className="rounded-xl" onClick={claim} disabled={!manualCode.trim()}>
-          Pair
+          {t.devicesView.pair}
         </Button>
       </div>
 
@@ -198,9 +199,9 @@ export function DevicesView({ onPairSuccess }: { onPairSuccess?: () => void }) {
       ) : (devices.data ?? []).length === 0 ? (
         <EmptyState
           icon={Laptop}
-          title="No devices paired yet"
-          description={"Scan the QR with your phone once.\nAfter that, your phone and this computer recognize each other automatically."}
-          actionLabel="Show QR Code"
+          title={t.devicesView.emptyTitle}
+          description={t.devicesView.emptyDesc}
+          actionLabel={t.devicesView.showQr}
           onAction={() => setAddOpen(true)}
         />
       ) : (
@@ -224,12 +225,12 @@ export function DevicesView({ onPairSuccess }: { onPairSuccess?: () => void }) {
                     {device.online ? (
                       <>
                         <Wifi className="size-3 text-success" />
-                        <span className="font-medium text-success">Online now</span>
+                        <span className="font-medium text-success">{t.devicesView.onlineNow}</span>
                       </>
                     ) : (
-                      <>Last seen {timeAgo(device.lastSeenAt)}</>
+                      <>{t.devicesView.lastSeen(timeAgo(device.lastSeenAt))}</>
                     )}
-                    <span>· paired {timeAgo(device.pairedAt)}</span>
+                    <span>{t.devicesView.pairedAgo(timeAgo(device.pairedAt))}</span>
                   </p>
                 </div>
                 <Button
@@ -239,7 +240,7 @@ export function DevicesView({ onPairSuccess }: { onPairSuccess?: () => void }) {
                   onClick={() => setRevokeTarget(device)}
                 >
                   <ShieldOff className="size-4" />
-                  Revoke
+                  {t.devicesView.revoke}
                 </Button>
               </div>
             );
@@ -252,21 +253,20 @@ export function DevicesView({ onPairSuccess }: { onPairSuccess?: () => void }) {
       <AlertDialog open={!!revokeTarget} onOpenChange={(v) => !v && setRevokeTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Revoke “{revokeTarget?.name}”?</AlertDialogTitle>
+            <AlertDialogTitle>{t.devicesView.revokeTitle(revokeTarget?.name ?? "")}</AlertDialogTitle>
             <AlertDialogDescription>
-              The device loses access to every share immediately. It can be paired again anytime
-              with a fresh QR code.
+              {t.devicesView.revokeDesc}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t.common.cancel}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-white hover:bg-destructive/90"
               onClick={() => void revoke()}
               disabled={revoking}
             >
               {revoking ? <Loader2 className="size-4 animate-spin" /> : <ShieldOff className="size-4" />}
-              Revoke device
+              {t.devicesView.revokeConfirm}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

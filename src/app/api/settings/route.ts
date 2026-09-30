@@ -24,12 +24,16 @@ export async function PATCH(req: Request) {
   const denied = await requireOwner(req);
   if (denied) return denied;
   const body = await readJsonBody<PatchBody>(req);
-  if (!body) return jsonError(400, "bad-body", "Invalid request body.");
+  if (!body)
+    return jsonError(400, "bad-body", "Invalid request body.", { key: "badBody" });
 
   const patch: Partial<LocalDockSettings> = {};
   if (typeof body.serverName === "string") {
     const name = body.serverName.trim().slice(0, 40);
-    if (!name) return jsonError(400, "bad-name", "Server name cannot be empty.");
+    if (!name)
+    return jsonError(400, "bad-name", "Server name cannot be empty.", {
+      key: "emptyServerName",
+    });
     patch.serverName = name;
   }
   if (typeof body.startWithWindows === "boolean") patch.startWithWindows = body.startWithWindows;

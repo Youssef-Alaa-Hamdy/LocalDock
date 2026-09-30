@@ -3,6 +3,16 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ---------- LocalDock Arabic typography ---------- */
+
+/* Cairo (loaded & self-hosted by next/font in layout.tsx via --font-cairo).
+   While Arabic is active, the whole sans stack flows through Cairo —
+   its Latin glyphs keep embedded English words visually harmonious. */
+html[lang="ar"] {
+  --font-geist-sans: var(--font-cairo), "Cairo", ui-sans-serif, system-ui,
+    -apple-system, "Segoe UI", sans-serif;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -126,6 +136,212 @@
   --sidebar-ring: oklch(0.78 0.13 184);
   --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -20px rgb(0 0 0 / 0.6);
   --shadow-pop: 0 6px 16px -6px rgb(0 0 0 / 0.5), 0 28px 70px -28px rgb(0 0 0 / 0.7);
+}
+
+/* =====================================================================
+   Theme packs — orthogonal hue identities layered over light/dark mode.
+   `data-theme` lives on <html> next to the `.dark` class; every pack
+   ships a full light + dark set (success/warning/destructive semantics
+   stay shared for consistency). Selectors are scoped with :not(.dark) /
+   .dark so packs can never leak across modes.
+   ===================================================================== */
+
+/* ---------- Midnight Ocean — deep indigo blue ---------- */
+[data-theme="ocean"]:not(.dark) {
+  --background: oklch(0.977 0.003 255);
+  --foreground: oklch(0.19 0.02 261);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.19 0.02 261);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.19 0.02 261);
+  --primary: oklch(0.55 0.16 262);
+  --primary-foreground: oklch(0.985 0.005 250);
+  --secondary: oklch(0.955 0.005 255);
+  --secondary-foreground: oklch(0.28 0.02 261);
+  --muted: oklch(0.955 0.005 255);
+  --muted-foreground: oklch(0.5 0.018 261);
+  --accent: oklch(0.93 0.04 262);
+  --accent-foreground: oklch(0.4 0.11 262);
+  --border: oklch(0.915 0.008 255);
+  --input: oklch(0.915 0.008 255);
+  --ring: oklch(0.55 0.16 262);
+  --chart-1: oklch(0.55 0.16 262);
+  --chart-2: oklch(0.63 0.15 200);
+  --chart-3: oklch(0.75 0.14 75);
+  --chart-4: oklch(0.585 0.22 27);
+  --chart-5: oklch(0.5 0.05 261);
+  --sidebar: oklch(0.995 0.002 255);
+  --sidebar-foreground: oklch(0.19 0.02 261);
+  --sidebar-primary: oklch(0.55 0.16 262);
+  --sidebar-primary-foreground: oklch(0.985 0.005 250);
+  --sidebar-accent: oklch(0.95 0.015 262);
+  --sidebar-accent-foreground: oklch(0.32 0.06 262);
+  --sidebar-border: oklch(0.925 0.007 255);
+  --sidebar-ring: oklch(0.55 0.16 262);
+}
+[data-theme="ocean"].dark {
+  --background: oklch(0.16 0.016 259);
+  --foreground: oklch(0.93 0.008 255);
+  --card: oklch(0.205 0.019 259);
+  --card-foreground: oklch(0.93 0.008 255);
+  --popover: oklch(0.22 0.021 259);
+  --popover-foreground: oklch(0.93 0.008 255);
+  --primary: oklch(0.76 0.13 260);
+  --primary-foreground: oklch(0.17 0.04 262);
+  --secondary: oklch(0.26 0.018 259);
+  --secondary-foreground: oklch(0.9 0.008 255);
+  --muted: oklch(0.26 0.018 259);
+  --muted-foreground: oklch(0.68 0.015 259);
+  --accent: oklch(0.3 0.05 262);
+  --accent-foreground: oklch(0.86 0.08 262);
+  --border: oklch(0.29 0.017 259);
+  --input: oklch(0.3 0.017 259);
+  --ring: oklch(0.76 0.13 260);
+  --chart-1: oklch(0.76 0.13 260);
+  --chart-2: oklch(0.72 0.15 200);
+  --chart-3: oklch(0.8 0.13 78);
+  --chart-4: oklch(0.65 0.2 25);
+  --chart-5: oklch(0.68 0.02 259);
+  --sidebar: oklch(0.185 0.017 259);
+  --sidebar-foreground: oklch(0.93 0.008 255);
+  --sidebar-primary: oklch(0.76 0.13 260);
+  --sidebar-primary-foreground: oklch(0.17 0.04 262);
+  --sidebar-accent: oklch(0.27 0.034 262);
+  --sidebar-accent-foreground: oklch(0.86 0.08 262);
+  --sidebar-border: oklch(0.28 0.017 259);
+  --sidebar-ring: oklch(0.76 0.13 260);
+}
+
+/* ---------- Amethyst — regal violet ---------- */
+[data-theme="amethyst"]:not(.dark) {
+  --background: oklch(0.977 0.003 300);
+  --foreground: oklch(0.19 0.02 300);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.19 0.02 300);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.19 0.02 300);
+  --primary: oklch(0.56 0.16 305);
+  --primary-foreground: oklch(0.985 0.005 300);
+  --secondary: oklch(0.955 0.005 300);
+  --secondary-foreground: oklch(0.28 0.02 300);
+  --muted: oklch(0.955 0.005 300);
+  --muted-foreground: oklch(0.5 0.018 300);
+  --accent: oklch(0.94 0.04 305);
+  --accent-foreground: oklch(0.42 0.1 305);
+  --border: oklch(0.915 0.008 300);
+  --input: oklch(0.915 0.008 300);
+  --ring: oklch(0.56 0.16 305);
+  --chart-1: oklch(0.56 0.16 305);
+  --chart-2: oklch(0.63 0.15 200);
+  --chart-3: oklch(0.75 0.14 75);
+  --chart-4: oklch(0.585 0.22 27);
+  --chart-5: oklch(0.5 0.05 300);
+  --sidebar: oklch(0.995 0.002 300);
+  --sidebar-foreground: oklch(0.19 0.02 300);
+  --sidebar-primary: oklch(0.56 0.16 305);
+  --sidebar-primary-foreground: oklch(0.985 0.005 300);
+  --sidebar-accent: oklch(0.95 0.015 305);
+  --sidebar-accent-foreground: oklch(0.34 0.07 305);
+  --sidebar-border: oklch(0.925 0.007 300);
+  --sidebar-ring: oklch(0.56 0.16 305);
+}
+[data-theme="amethyst"].dark {
+  --background: oklch(0.16 0.016 300);
+  --foreground: oklch(0.93 0.008 300);
+  --card: oklch(0.205 0.019 300);
+  --card-foreground: oklch(0.93 0.008 300);
+  --popover: oklch(0.22 0.021 300);
+  --popover-foreground: oklch(0.93 0.008 300);
+  --primary: oklch(0.77 0.13 308);
+  --primary-foreground: oklch(0.18 0.04 308);
+  --secondary: oklch(0.26 0.018 300);
+  --secondary-foreground: oklch(0.9 0.008 300);
+  --muted: oklch(0.26 0.018 300);
+  --muted-foreground: oklch(0.68 0.015 300);
+  --accent: oklch(0.3 0.05 308);
+  --accent-foreground: oklch(0.87 0.08 308);
+  --border: oklch(0.29 0.017 300);
+  --input: oklch(0.3 0.017 300);
+  --ring: oklch(0.77 0.13 308);
+  --chart-1: oklch(0.77 0.13 308);
+  --chart-2: oklch(0.72 0.15 200);
+  --chart-3: oklch(0.8 0.13 78);
+  --chart-4: oklch(0.65 0.2 25);
+  --chart-5: oklch(0.68 0.02 300);
+  --sidebar: oklch(0.185 0.017 300);
+  --sidebar-foreground: oklch(0.93 0.008 300);
+  --sidebar-primary: oklch(0.77 0.13 308);
+  --sidebar-primary-foreground: oklch(0.18 0.04 308);
+  --sidebar-accent: oklch(0.27 0.034 308);
+  --sidebar-accent-foreground: oklch(0.87 0.08 308);
+  --sidebar-border: oklch(0.28 0.017 300);
+  --sidebar-ring: oklch(0.77 0.13 308);
+}
+
+/* ---------- Desert Sunset — warm amber copper ---------- */
+[data-theme="sunset"]:not(.dark) {
+  --background: oklch(0.977 0.004 75);
+  --foreground: oklch(0.19 0.02 60);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.19 0.02 60);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.19 0.02 60);
+  --primary: oklch(0.58 0.13 55);
+  --primary-foreground: oklch(0.985 0.01 85);
+  --secondary: oklch(0.955 0.006 75);
+  --secondary-foreground: oklch(0.28 0.02 60);
+  --muted: oklch(0.955 0.006 75);
+  --muted-foreground: oklch(0.5 0.018 60);
+  --accent: oklch(0.94 0.05 70);
+  --accent-foreground: oklch(0.42 0.09 60);
+  --border: oklch(0.915 0.009 75);
+  --input: oklch(0.915 0.009 75);
+  --ring: oklch(0.58 0.13 55);
+  --chart-1: oklch(0.58 0.13 55);
+  --chart-2: oklch(0.63 0.15 155);
+  --chart-3: oklch(0.75 0.14 30);
+  --chart-4: oklch(0.585 0.22 27);
+  --chart-5: oklch(0.5 0.05 60);
+  --sidebar: oklch(0.995 0.003 75);
+  --sidebar-foreground: oklch(0.19 0.02 60);
+  --sidebar-primary: oklch(0.58 0.13 55);
+  --sidebar-primary-foreground: oklch(0.985 0.01 85);
+  --sidebar-accent: oklch(0.95 0.018 70);
+  --sidebar-accent-foreground: oklch(0.34 0.07 60);
+  --sidebar-border: oklch(0.925 0.008 75);
+  --sidebar-ring: oklch(0.58 0.13 55);
+}
+[data-theme="sunset"].dark {
+  --background: oklch(0.165 0.015 60);
+  --foreground: oklch(0.93 0.01 70);
+  --card: oklch(0.21 0.017 60);
+  --card-foreground: oklch(0.93 0.01 70);
+  --popover: oklch(0.225 0.019 60);
+  --popover-foreground: oklch(0.93 0.01 70);
+  --primary: oklch(0.79 0.12 70);
+  --primary-foreground: oklch(0.22 0.05 60);
+  --secondary: oklch(0.265 0.016 60);
+  --secondary-foreground: oklch(0.9 0.01 70);
+  --muted: oklch(0.265 0.016 60);
+  --muted-foreground: oklch(0.68 0.015 65);
+  --accent: oklch(0.3 0.045 65);
+  --accent-foreground: oklch(0.87 0.09 70);
+  --border: oklch(0.295 0.015 60);
+  --input: oklch(0.305 0.015 60);
+  --ring: oklch(0.79 0.12 70);
+  --chart-1: oklch(0.79 0.12 70);
+  --chart-2: oklch(0.72 0.15 158);
+  --chart-3: oklch(0.8 0.13 30);
+  --chart-4: oklch(0.65 0.2 25);
+  --chart-5: oklch(0.68 0.02 60);
+  --sidebar: oklch(0.19 0.016 60);
+  --sidebar-foreground: oklch(0.93 0.01 70);
+  --sidebar-primary: oklch(0.79 0.12 70);
+  --sidebar-primary-foreground: oklch(0.22 0.05 60);
+  --sidebar-accent: oklch(0.275 0.03 65);
+  --sidebar-accent-foreground: oklch(0.87 0.09 70);
+  --sidebar-border: oklch(0.285 0.015 60);
+  --sidebar-ring: oklch(0.79 0.12 70);
 }
 
 @theme inline {
@@ -363,4 +579,36 @@
   .ld-bounce, .ld-bar {
     animation: none !important;
   }
+}
+
+/* =====================================================================
+   RTL / Arabic refinements
+   ===================================================================== */
+
+/* The transfer shimmer sweeps along the reading direction. */
+@keyframes localdock-shimmer-rtl {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-220%); }
+}
+[dir="rtl"] .progress-shimmer::after {
+  animation-name: localdock-shimmer-rtl;
+}
+
+/* Arabic script joins letters — letter-spacing must never be applied,
+   and the taller glyph profile breathes better with a touch more leading. */
+[dir="rtl"] {
+  --ld-tracking: 0;
+}
+[dir="rtl"] * {
+  letter-spacing: 0 !important;
+}
+html[lang="ar"] body {
+  line-height: 1.65;
+}
+
+/* Numbers/paths stay LTR islands inside Arabic sentences. */
+[dir="rtl"] .tnum,
+[dir="rtl"] code,
+[dir="rtl"] .font-mono {
+  unicode-bidi: plaintext;
 }

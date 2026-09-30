@@ -43,6 +43,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/localdock/i18n";
 
 const TEXT_LIMIT = 512 * 1024;
 
@@ -70,6 +71,7 @@ export function PreviewModal({
   onClose: () => void;
   onDownload: () => void;
 }) {
+  const { t } = useI18n();
   const [src, setSrc] = useState<string | null>(null);
   const [text, setText] = useState<string | null>(null);
   const [textTooBig, setTextTooBig] = useState(false);
@@ -151,27 +153,27 @@ export function PreviewModal({
         className="ld-preview flex h-[90dvh] max-w-5xl flex-col gap-0 overflow-hidden p-0 sm:h-[85vh] sm:max-w-5xl"
       >
         {/* header */}
-        <div className="flex min-w-0 items-center gap-2 border-b border-border py-3 pl-3 pr-2.5 sm:pl-5">
+        <div className="flex min-w-0 items-center gap-2 border-b border-border py-3 ps-3 pe-2.5 sm:ps-5">
           <div className="min-w-0 flex-1">
             <DialogTitle className="truncate text-sm font-semibold">{entry.name}</DialogTitle>
             <p className="mt-0.5 truncate text-xs text-muted-foreground">
               {formatBytes(entry.size)} · {shareName} · {formatDateTime(entry.modifiedAt)}
               {siblings.length > 1 && index >= 0 && (
-                <span className="tnum ml-2 rounded-md bg-muted px-1.5 py-0.5 font-semibold text-foreground/70">
+                <span className="tnum ms-2 rounded-md bg-muted px-1.5 py-0.5 font-semibold text-foreground/70">
                   {index + 1} / {siblings.length}
                 </span>
               )}
             </p>
           </div>
           <Button variant="outline" size="sm" className="shrink-0 rounded-xl" onClick={onDownload}>
-            Download
+            {t.preview.download}
           </Button>
           <Button
             variant="ghost"
             size="icon"
             className="size-9 shrink-0 rounded-xl text-muted-foreground hover:text-foreground"
             onClick={onClose}
-            aria-label="Close preview"
+            aria-label={t.preview.closeAria}
           >
             <X className="size-4" />
           </Button>
@@ -182,8 +184,8 @@ export function PreviewModal({
           {/* navigation arrows */}
           {siblings.length > 1 && (
             <>
-              <NavArrow side="left" disabled={!canPrev} onClick={() => go(-1)} />
-              <NavArrow side="right" disabled={!canNext} onClick={() => go(1)} />
+              <NavArrow side="prev" disabled={!canPrev} onClick={() => go(-1)} />
+              <NavArrow side="next" disabled={!canNext} onClick={() => go(1)} />
             </>
           )}
 
@@ -217,7 +219,7 @@ export function PreviewModal({
               <iframe
                 key={src}
                 src={src}
-                title={`PDF preview of ${entry.name}`}
+                title={t.preview.pdfTitle(entry.name)}
                 className="h-full w-full border-0 bg-white"
               />
             ) : (
@@ -228,25 +230,25 @@ export function PreviewModal({
           {(entry.category === "text" || entry.category === "code") &&
             (text !== null ? (
               <div className="ld-scroll h-full overflow-auto bg-[#0b0d12] p-4 sm:p-5">
-                <pre className="font-mono text-[12.5px] leading-relaxed text-[#d6deeb]">{text}</pre>
+                <pre dir="ltr" className="font-mono text-[12.5px] leading-relaxed text-[#d6deeb]">{text}</pre>
               </div>
             ) : textTooBig ? (
               <CenterNote>
-                This file is large ({formatBytes(entry.size)}) — download it to view the contents.
+                {t.preview.largeFile(formatBytes(entry.size))}
               </CenterNote>
             ) : (
               <CenterSpinner />
             ))}
 
           {entry.category === "archive" && (
-            <CenterNote>Archives aren&apos;t previewed — download and open them locally.</CenterNote>
+            <CenterNote>{t.preview.archiveNote}</CenterNote>
           )}
           {entry.category === "apk" && (
-            <CenterNote>APK file — download and install on an Android device.</CenterNote>
+            <CenterNote>{t.preview.apkNote}</CenterNote>
           )}
           {entry.category === "other" && (
             <CenterNote>
-              No preview for this file type ({entry.mimeType ?? "unknown"}) — download it instead.
+              {t.preview.noPreview(entry.mimeType ?? t.preview.unknownType)}
             </CenterNote>
           )}
         </div>
@@ -255,8 +257,8 @@ export function PreviewModal({
         <div className="flex w-full min-w-0 items-center gap-2 border-t border-border px-3 py-2.5 sm:px-5">
           <Button variant="ghost" size="sm" className="shrink-0 rounded-lg text-xs" onClick={verify}>
             <Fingerprint className="size-3.5" />
-            <span className="hidden sm:inline">Verify integrity (SHA-256)</span>
-            <span className="sm:hidden">SHA-256</span>
+            <span className="hidden sm:inline">{t.preview.verifySha}</span>
+            <span className="sm:hidden">{t.preview.shaLabel}</span>
           </Button>
           {hashing && <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />}
           {hash && (
@@ -283,6 +285,7 @@ function ImageViewer({
   alt: string;
   onCmd: (cmd: { zoom: (d: number) => void; reset: () => void; rotate: (d: number) => void } | null) => void;
 }) {
+  const { t } = useI18n();
   const [loaded, setLoaded] = useState(false);
   const [zoom, setZoom] = useState(0); // 0 = fit, else scale factor
   const [rot, setRot] = useState(0);
@@ -369,19 +372,19 @@ function ImageViewer({
 
       {/* control bar */}
       <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-2xl border border-white/10 bg-black/55 p-1 text-white shadow-pop backdrop-blur-md">
-        <IconBtn label="Zoom out" onClick={() => zoomBy(-1)}><Minus className="size-4" /></IconBtn>
+        <IconBtn label={t.preview.zoomOut} onClick={() => zoomBy(-1)}><Minus className="size-4" /></IconBtn>
         <button
           className="tnum min-w-14 rounded-lg px-2 py-1.5 text-xs font-bold hover:bg-white/10"
           onClick={() => setZoom((z) => (z === 0 ? 1 : 0))}
-          title="Toggle fit / 100%"
+          title={t.preview.fitTitle}
         >
-          {zoom === 0 ? "Fit" : `${Math.round(zoom * 100)}%`}
+          {zoom === 0 ? t.preview.fit : `${Math.round(zoom * 100)}%`}
         </button>
-        <IconBtn label="Zoom in" onClick={() => zoomBy(1)}><Plus className="size-4" /></IconBtn>
+        <IconBtn label={t.preview.zoomIn} onClick={() => zoomBy(1)}><Plus className="size-4" /></IconBtn>
         <span className="mx-0.5 h-5 w-px bg-white/15" />
-        <IconBtn label="Rotate left" onClick={() => setRot((r) => (r + 270) % 360)}><RotateCcw className="size-4" /></IconBtn>
-        <IconBtn label="Rotate right" onClick={() => setRot((r) => (r + 90) % 360)}><RotateCw className="size-4" /></IconBtn>
-        <IconBtn label="Reset (fit)" onClick={() => { setZoom(0); setPan({ x: 0, y: 0 }); setRot(0); }}>
+        <IconBtn label={t.preview.rotateLeft} onClick={() => setRot((r) => (r + 270) % 360)}><RotateCcw className="size-4" /></IconBtn>
+        <IconBtn label={t.preview.rotateRight} onClick={() => setRot((r) => (r + 90) % 360)}><RotateCw className="size-4" /></IconBtn>
+        <IconBtn label={t.preview.reset} onClick={() => { setZoom(0); setPan({ x: 0, y: 0 }); setRot(0); }}>
           <Maximize2 className="size-4" />
         </IconBtn>
       </div>
@@ -403,6 +406,7 @@ function fmtTime(sec: number): string {
 const RATES = [1, 1.25, 1.5, 2, 0.75];
 
 function AudioPlayer({ src, name }: { src: string; name: string }) {
+  const { t } = useI18n();
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [cur, setCur] = useState(0);
@@ -472,7 +476,7 @@ function AudioPlayer({ src, name }: { src: string; name: string }) {
             setCur(v);
           }}
           className="ld-range mt-4 w-full"
-          aria-label="Seek"
+          aria-label={t.preview.seekAria}
         />
         <div className="tnum mt-1 flex justify-between text-[11px] font-medium text-white/60">
           <span>{fmtTime(cur)}</span>
@@ -481,21 +485,21 @@ function AudioPlayer({ src, name }: { src: string; name: string }) {
 
         {/* controls */}
         <div className="mt-3 flex items-center justify-center gap-2">
-          <IconBtn label="Back 10 seconds" onClick={() => skip(-10)} dark><Rewind className="size-4" /></IconBtn>
+          <IconBtn label={t.preview.back10} onClick={() => skip(-10)} dark><Rewind className="size-4 rtl:-scale-x-100" /></IconBtn>
           <button
             onClick={toggle}
             className="flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-pop transition-transform hover:scale-105 active:scale-95"
-            aria-label={playing ? "Pause" : "Play"}
+            aria-label={playing ? t.preview.pauseAria : t.preview.playAria}
           >
-            {playing ? <Pause className="size-5" /> : <Play className="size-5 translate-x-[1px]" />}
+            {playing ? <Pause className="size-5" /> : <Play className="size-5 translate-x-[1px] rtl:-translate-x-[1px] rtl:-scale-x-100" />}
           </button>
-          <IconBtn label="Forward 10 seconds" onClick={() => skip(10)} dark><FastForward className="size-4" /></IconBtn>
+          <IconBtn label={t.preview.fwd10} onClick={() => skip(10)} dark><FastForward className="size-4 rtl:-scale-x-100" /></IconBtn>
         </div>
 
         {/* volume + speed */}
         <div className="mt-4 flex items-center gap-2 border-t border-white/10 pt-3">
           <IconBtn
-            label={muted ? "Unmute" : "Mute"}
+            label={muted ? t.preview.unmute : t.preview.mute}
             dark
             onClick={() => {
               const a = audioRef.current;
@@ -521,7 +525,7 @@ function AudioPlayer({ src, name }: { src: string; name: string }) {
               if (a) { a.volume = v; a.muted = v === 0; }
             }}
             className="ld-range flex-1"
-            aria-label="Volume"
+            aria-label={t.preview.volumeAria}
           />
           <button
             className="tnum shrink-0 rounded-lg bg-white/10 px-2 py-1.5 text-xs font-bold text-white hover:bg-white/20"
@@ -531,7 +535,7 @@ function AudioPlayer({ src, name }: { src: string; name: string }) {
               const a = audioRef.current;
               if (a) a.playbackRate = RATES[next];
             }}
-            title="Playback speed"
+            title={t.preview.speedTitle}
           >
             {RATES[rateIdx]}×
           </button>
@@ -571,19 +575,24 @@ function IconBtn({
   );
 }
 
-function NavArrow({ side, disabled, onClick }: { side: "left" | "right"; disabled: boolean; onClick: () => void }) {
+function NavArrow({ side, disabled, onClick }: { side: "prev" | "next"; disabled: boolean; onClick: () => void }) {
+  const { t } = useI18n();
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      aria-label={side === "left" ? "Previous file" : "Next file"}
+      aria-label={side === "prev" ? t.preview.prevAria : t.preview.nextAria}
       className={cn(
         "absolute top-1/2 z-10 flex size-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white/90 shadow-pop backdrop-blur-md transition-all hover:bg-black/65 hover:text-white active:scale-95",
-        side === "left" ? "left-2 sm:left-3" : "right-2 sm:right-3",
+        side === "prev" ? "start-2 sm:start-3" : "end-2 sm:end-3",
         disabled && "pointer-events-none opacity-0"
       )}
     >
-      {side === "left" ? <ChevronLeft className="size-5" /> : <ChevronRight className="size-5" />}
+      {side === "prev" ? (
+        <ChevronLeft className="size-5 rtl:-scale-x-100" />
+      ) : (
+        <ChevronRight className="size-5 rtl:-scale-x-100" />
+      )}
     </button>
   );
 }

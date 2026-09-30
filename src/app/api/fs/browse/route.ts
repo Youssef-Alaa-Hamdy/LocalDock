@@ -88,10 +88,12 @@ export async function GET(req: Request) {
   try {
     const stat = await fsp.stat(normalized);
     if (!stat.isDirectory()) {
-      return jsonError(400, "not-a-dir", "The selected path is not a folder.");
+      return jsonError(400, "not-a-dir", "The selected path is not a folder.", { key: "notDir" });
     }
   } catch {
-    return jsonError(404, "not-found", "That folder was not found on this computer.");
+    return jsonError(404, "not-found", "That folder was not found on this computer.", {
+      key: "folderNotOnDisk",
+    });
   }
 
   // Calculate parent directory
@@ -135,8 +137,13 @@ export async function GET(req: Request) {
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
     if (code === "EACCES" || code === "EPERM") {
-      return jsonError(403, "permission", "The server does not have permission to read this folder.");
+      return jsonError(
+        403,
+        "permission",
+        "The server does not have permission to read this folder.",
+        { key: "permission" }
+      );
     }
-    return jsonError(500, "read-failed", "Could not read this folder.");
+    return jsonError(500, "read-failed", "Could not read this folder.", { key: "readFailed" });
   }
 }

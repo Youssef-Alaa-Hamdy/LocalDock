@@ -4,8 +4,12 @@ import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { useSystem, useDevices, useActivity, useRefresh } from "../data-hooks";
 import { useNav } from "../nav";
-import { Api } from "@/lib/localdock/client/api";
+import { Api, apiErrorMessage } from "@/lib/localdock/client/api";
 import { formatBytes, formatSpeed } from "@/lib/localdock/client/format";
+import { useI18n } from "@/lib/localdock/i18n/provider";
+import { LOCALE_LIST, LOCALES, type Locale } from "@/lib/localdock/i18n/locales";
+import { THEME_PACK_LIST, THEME_PACKS, useThemePack } from "@/lib/localdock/i18n/themes";
+import { activityMessage } from "@/lib/localdock/i18n/activity";
 import { StatusDot, LogoMark } from "../primitives";
 import { Desktop, desktopMode } from "@/lib/localdock/client/desktop";
 import { cn } from "@/lib/utils";
@@ -34,6 +38,8 @@ import { toast } from "sonner";
 import type { LocalDockSettings } from "@/lib/localdock/types";
 
 export function SettingsView() {
+  const { t, locale, setLocale } = useI18n();
+  const { pack, setPack } = useThemePack();
   const system = useSystem();
   const devices = useDevices();
   const activity = useActivity(60);
@@ -71,10 +77,10 @@ export function SettingsView() {
       if (typeof patch.startWithWindows === "boolean") {
         await Desktop.setStartWithWindows(patch.startWithWindows);
       }
-      if (!quiet) toast.success("Settings saved");
+      if (!quiet) toast.success(t.settings.savedToast);
       refresh.refreshSystem();
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(apiErrorMessage(e));
     } finally {
       setSaving(false);
     }
@@ -85,15 +91,15 @@ export function SettingsView() {
       <TabsList className="rounded-2xl bg-muted/70 p-1">
         <TabsTrigger value="general" className="rounded-xl">
           <SettingsIcon className="size-4" />
-          General
+          {t.settings.tabGeneral}
         </TabsTrigger>
         <TabsTrigger value="security" className="rounded-xl">
           <ShieldCheck className="size-4" />
-          Security
+          {t.settings.tabSecurity}
         </TabsTrigger>
         <TabsTrigger value="system" className="rounded-xl">
           <ServerCog className="size-4" />
-          System
+          {t.settings.tabSystem}
         </TabsTrigger>
       </TabsList>
 
@@ -101,21 +107,21 @@ export function SettingsView() {
       <TabsContent value="general" className="mt-5 space-y-4">
         <SectionCard
           icon={<Laptop className="size-4" />}
-          title="Your computer's identity"
-          desc="How your cloud appears to other devices on the network."
+          title={t.settings.identityTitle}
+          desc={t.settings.identityDesc}
         >
           <div className="space-y-3">
             <div className="flex items-end gap-2">
               <div className="flex-1 space-y-1.5">
                 <Label htmlFor="server-name" className="text-xs font-semibold">
-                  Server name
+                  {t.settings.serverName}
                 </Label>
                 <Input
                   id="server-name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="rounded-xl"
-                  placeholder="My PC"
+                  placeholder={t.settings.serverNamePlaceholder}
                 />
               </div>
               <Button
@@ -124,51 +130,135 @@ export function SettingsView() {
                 onClick={() => save({ serverName: name })}
               >
                 {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-                Save
+                {t.common.save}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Devices will see this name when pairing and browsing shares.
+              {t.settings.serverNameHint}
             </p>
           </div>
         </SectionCard>
 
         <SectionCard
           icon={<MonitorSmartphone className="size-4" />}
-          title="Appearance"
-          desc="Light, dark, or follow your system."
+          title={t.settings.appearanceTitle}
+          desc={t.settings.appearanceDesc}
         >
-          <div className="grid grid-cols-3 gap-2">
-            {(["light", "dark", "system"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => {
-                  setTheme(t);
-                  void save({ theme: t }, true);
-                }}
-                className={cn(
-                  "rounded-2xl border p-3 text-sm font-medium capitalize transition-all",
-                  theme === t
-                    ? "border-primary/60 bg-accent/50 text-accent-foreground"
-                    : "border-border hover:bg-muted"
-                )}
-              >
-                {t}
-              </button>
-            ))}
+          <div className="space-y-4">
+            {/* Mode: light / dark / system */}
+            <div className="grid grid-cols-3 gap-2">
+              {(["light", "dark", "system"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => {
+                    setTheme(m);
+                    void save({ theme: m }, true);
+                  }}
+                  className={cn(
+                    "rounded-2xl border p-3 text-sm font-medium transition-all",
+                    theme === m
+                      ? "border-primary/60 bg-accent/50 text-accent-foreground"
+                      : "border-border hover:bg-muted"
+                  )}
+                >
+                  {m === "light"
+                    ? t.settings.modeLight
+                    : m === "dark"
+                      ? t.settings.modeDark
+                      : t.settings.modeSystem}
+                </button>
+              ))}
+            </div>
+
+            {/* Theme packs: 4 palettes × the two modes above = 8 looks */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground">
+                {t.settings.themePacksTitle}
+                <span className="font-normal"> — {t.settings.themePacksDesc}</span>
+              </p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {THEME_PACK_LIST.map((id) => {
+                  const meta = THEME_PACKS[id];
+                  const active = pack === id;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => setPack(id)}
+                      aria-pressed={active}
+                      className={cn(
+                        "group relative overflow-hidden rounded-2xl border p-2 text-start transition-all",
+                        active
+                          ? "border-primary/60 bg-accent/50 text-accent-foreground shadow-card"
+                          : "border-border hover:bg-muted"
+                      )}
+                    >
+                      <span
+                        className="block h-9 w-full rounded-xl"
+                        style={{
+                          background: `linear-gradient(135deg, ${meta.swatch[0]}, ${meta.swatch[1]} 55%, ${meta.swatch[2]})`,
+                        }}
+                      />
+                      <span className="mt-2 flex items-center justify-between gap-1 px-0.5 pb-0.5">
+                        <span className="truncate text-xs font-semibold">
+                          {t.themePacks[id]}
+                        </span>
+                        {active && <Check className="size-3.5 shrink-0 text-primary" />}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Language */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground">
+                {t.settings.languageTitle}
+                <span className="font-normal"> — {t.settings.languageDesc}</span>
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {LOCALE_LIST.map((l: Locale) => {
+                  const meta = LOCALES[l];
+                  const active = locale === l;
+                  return (
+                    <button
+                      key={l}
+                      onClick={() => setLocale(l)}
+                      aria-pressed={active}
+                      className={cn(
+                        "flex items-center justify-between gap-2 rounded-2xl border p-3 transition-all",
+                        active
+                          ? "border-primary/60 bg-accent/50 text-accent-foreground"
+                          : "border-border hover:bg-muted"
+                      )}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-semibold">
+                          {meta.nativeName}
+                        </span>
+                        <span className="block truncate text-[11px] text-muted-foreground">
+                          {meta.name} · {meta.dir.toUpperCase()}
+                        </span>
+                      </span>
+                      {active && <Check className="size-4 shrink-0 text-primary" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </SectionCard>
 
         <SectionCard
           icon={<Laptop className="size-4" />}
-          title="Windows startup"
-          desc="Start LocalDock silently when this computer boots, so your cloud is always on."
+          title={t.settings.startupTitle}
+          desc={t.settings.startupDesc}
         >
           <label className="flex items-center justify-between rounded-xl border border-border p-3.5">
-            <div className="pr-3">
-              <p className="text-sm font-semibold">Start with Windows</p>
+            <div className="pe-3">
+              <p className="text-sm font-semibold">{t.settings.startWithWindows}</p>
               <p className="text-xs text-muted-foreground">
-                Applies when running the LocalDock desktop app on Windows.
+                {t.settings.startupNote}
               </p>
             </div>
             <Switch
@@ -187,35 +277,35 @@ export function SettingsView() {
               <ShieldCheck className="size-5" />
             </span>
             <div>
-              <p className="text-lg font-bold tracking-tight">Local Network Only</p>
+              <p className="text-lg font-bold tracking-tight">{t.settings.securityTitle}</p>
               <p className="text-sm text-muted-foreground">
-                Your services never touch the internet. No cloud, no accounts, no tracking.
+                {t.settings.securityDesc}
               </p>
             </div>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <MiniStat label="Trusted devices" value={`${devices.data?.length ?? 0}`} />
-            <MiniStat label="Guest shares" value={
+            <MiniStat label={t.settings.trustedDevices} value={`${devices.data?.length ?? 0}`} />
+            <MiniStat label={t.settings.guestShares} value={
               `${(system.data ? 0 : 0)}` === "0" ? "—" : "—"
             } />
-            <MiniStat label="Server" value={system.data?.online ? "Online" : "Offline"} ok={system.data?.online} />
+            <MiniStat label={t.settings.server} value={system.data?.online ? t.status.online : t.status.offline} ok={system.data?.online} />
           </div>
           <Button variant="outline" className="mt-4 rounded-xl" onClick={() => go("devices")}>
             <Eye className="size-4" />
-            Manage devices
+            {t.settings.manageDevices}
           </Button>
         </div>
 
         <SectionCard
           icon={<ServerCog className="size-4" />}
-          title="Owner console"
-          desc="Controls who may open this dashboard and manage the server."
+          title={t.settings.ownerTitle}
+          desc={t.settings.ownerDesc}
         >
           <label className="flex items-center justify-between rounded-xl border border-border p-3.5">
-            <div className="pr-3">
-              <p className="text-sm font-semibold">Allow dashboard from any LAN device</p>
+            <div className="pe-3">
+              <p className="text-sm font-semibold">{t.settings.allowRemote}</p>
               <p className="text-xs text-muted-foreground">
-                Off = only this computer can manage shares and devices (desktop app default).
+                {t.settings.allowRemoteNote}
               </p>
             </div>
             <Switch
@@ -227,18 +317,11 @@ export function SettingsView() {
 
         <SectionCard
           icon={<ShieldCheck className="size-4" />}
-          title="Built-in protections"
-          desc="Always on, nothing to configure."
+          title={t.settings.protectionsTitle}
+          desc={t.settings.protectionsDesc}
         >
           <ul className="grid gap-2 text-sm sm:grid-cols-2">
-            {[
-              "Safe-by-default sharing (Read Only, no guests)",
-              "Secure device pairing with single-use codes",
-              "Per-share permissions & device allow-lists",
-              "Path-traversal & filename attack protection",
-              "SHA-256 verification of transferred files",
-              "One-click device revocation",
-            ].map((item) => (
+            {t.settings.protections.map((item) => (
               <li key={item} className="flex items-start gap-2 rounded-xl bg-muted/50 px-3 py-2.5">
                 <Check className="mt-0.5 size-4 shrink-0 text-success" />
                 {item}
@@ -252,48 +335,46 @@ export function SettingsView() {
       <TabsContent value="system" className="mt-5 space-y-4">
         <SectionCard
           icon={<ServerCog className="size-4" />}
-          title="Status"
-          desc="A live look under the hood."
+          title={t.settings.statusTitle}
+          desc={t.settings.statusDesc}
         >
           {system.isLoading || !system.data ? (
             <Skeleton className="h-40 rounded-xl" />
           ) : (
             <div className="grid gap-2 sm:grid-cols-2">
-              <StatusRow label="Server" value="Online" ok />
-              <StatusRow label="Network" value={system.data.network.length > 0 ? `${system.data.network.length} interface(s)` : "Local only"} ok={system.data.network.length > 0} />
-              <StatusRow label="Storage" value={`${formatBytes(system.data.storage.freeBytes)} free`} ok />
-              <StatusRow label="Transfers" value={formatSpeed(system.data.transferSpeedBps)} />
-              <StatusRow label="Devices" value={`${system.data.devicesOnline} online / ${system.data.devicesTrusted} trusted`} />
-              <StatusRow label="Platform" value={system.data.platform} />
+              <StatusRow label={t.settings.server} value={t.status.online} ok />
+              <StatusRow label={t.settings.network} value={system.data.network.length > 0 ? t.settings.nInterfaces(system.data.network.length) : t.settings.localOnly} ok={system.data.network.length > 0} />
+              <StatusRow label={t.settings.storageRow} value={t.settings.storageFree(formatBytes(system.data.storage.freeBytes))} ok />
+              <StatusRow label={t.settings.transfers} value={formatSpeed(system.data.transferSpeedBps)} />
+              <StatusRow label={t.settings.trustedDevices} value={t.settings.devicesOnlineTrusted(system.data.devicesOnline, system.data.devicesTrusted)} />
+              <StatusRow label={t.settings.platform} value={system.data.platform} />
             </div>
           )}
         </SectionCard>
 
         <SectionCard
           icon={<Network className="size-4" />}
-          title="Network addresses"
-          desc="Where your cloud can be reached on this network."
+          title={t.settings.netTitle}
+          desc={t.settings.netDesc}
         >
           <div className="space-y-2">
             {(system.data?.network ?? []).map((nic) => (
               <div key={`${nic.name}-${nic.address}`} className="flex items-center gap-3 rounded-xl border border-border px-3.5 py-2.5">
                 <Wifi className="size-4 text-muted-foreground" />
                 <span className="text-sm font-medium">{nic.name}</span>
-                <code className="ml-auto rounded-md bg-muted px-2 py-0.5 font-mono text-xs">
+                <code className="ms-auto rounded-md bg-muted px-2 py-0.5 font-mono text-xs">
                   {nic.address}
                 </code>
               </div>
             ))}
             {(system.data?.network ?? []).length === 0 && (
               <p className="rounded-xl bg-muted/60 px-3.5 py-3 text-sm text-muted-foreground">
-                No external interfaces detected — the server is reachable from this machine only.
+                {t.settings.netEmpty}
               </p>
             )}
             <div className="flex items-start gap-2 rounded-xl bg-muted/50 px-3.5 py-3 text-xs text-muted-foreground">
               <Info className="mt-0.5 size-3.5 shrink-0" />
-              Your computer advertises itself automatically on the local network. Devices never
-              need these addresses — pairing and QR codes handle it. The desktop shell adds
-              “localdock.local” name resolution (mDNS).
+              {t.settings.netNote}
             </div>
           </div>
         </SectionCard>
@@ -301,21 +382,21 @@ export function SettingsView() {
         {desktopMode() && (
           <SectionCard
             icon={<MonitorSmartphone className="size-4" />}
-            title="Windows app"
-            desc="The LocalDock desktop shell is managing this server."
+            title={t.settings.desktopTitle}
+            desc={t.settings.desktopDesc}
           >
             <ul className="space-y-1.5 text-sm text-muted-foreground">
               <li className="flex items-start gap-2">
                 <Check className="mt-0.5 size-4 shrink-0 text-success" />
-                Closing this window keeps the server running in the system tray.
+                {t.settings.desktopTray}
               </li>
               <li className="flex items-start gap-2">
                 <Check className="mt-0.5 size-4 shrink-0 text-success" />
-                “Start with Windows” controls the real registry entry.
+                {t.settings.desktopRegistry}
               </li>
               <li className="flex items-start gap-2">
                 <Check className="mt-0.5 size-4 shrink-0 text-success" />
-                The server announces itself via mDNS on your network.
+                {t.settings.desktopMdns}
               </li>
             </ul>
             <Button
@@ -324,27 +405,27 @@ export function SettingsView() {
               onClick={() => void Desktop.openInBrowser()}
             >
               <Eye className="size-4" />
-              Open in your default browser
+              {t.settings.openInBrowser}
             </Button>
           </SectionCard>
         )}
 
         <SectionCard
           icon={<ScrollText className="size-4" />}
-          title="Activity log"
-          desc="The last 60 events, newest first."
+          title={t.settings.logTitle}
+          desc={t.settings.logDesc}
         >
           <div className="ld-scroll max-h-80 space-y-1 overflow-y-auto rounded-xl border border-border p-2">
             {(activity.data ?? []).map((entry) => (
               <div key={entry.id} className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-xs hover:bg-muted/60">
                 <StatusDot ok pulse={false} className="bg-primary/70" />
-                <span className="min-w-0 flex-1 truncate text-foreground/90">{entry.message}</span>
+                <span className="min-w-0 flex-1 truncate text-foreground/90">{activityMessage(entry, t.activity)}</span>
                 <code className="shrink-0 text-[10px] text-muted-foreground">{entry.type}</code>
               </div>
             ))}
             {(activity.data ?? []).length === 0 && (
               <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-                Nothing logged yet.
+                {t.settings.logEmpty}
               </p>
             )}
           </div>
@@ -352,14 +433,14 @@ export function SettingsView() {
 
         <SectionCard
           icon={<HardDrive className="size-4" />}
-          title="Storage location"
-          desc="Where LocalDock keeps shares, sites and metadata."
+          title={t.settings.storageTitle}
+          desc={t.settings.storageDesc}
         >
           <div className="space-y-1.5 rounded-xl bg-muted/50 p-3.5 font-mono text-xs text-muted-foreground">
-            <p><span className="font-semibold text-foreground">LocalDock home:</span> ./localdock</p>
-            <p><span className="font-semibold text-foreground">Shares:</span> localdock/Shares/*</p>
-            <p><span className="font-semibold text-foreground">Websites:</span> localdock/Websites/*</p>
-            <p><span className="font-semibold text-foreground">Registry:</span> localdock/data/*.json</p>
+            <p><span className="font-semibold text-foreground">{t.settings.storageHome}</span> ./localdock</p>
+            <p><span className="font-semibold text-foreground">{t.settings.storageShares}</span> localdock/Shares/*</p>
+            <p><span className="font-semibold text-foreground">{t.settings.storageWebsites}</span> localdock/Websites/*</p>
+            <p><span className="font-semibold text-foreground">{t.settings.storageRegistry}</span> localdock/data/*.json</p>
           </div>
         </SectionCard>
       </TabsContent>

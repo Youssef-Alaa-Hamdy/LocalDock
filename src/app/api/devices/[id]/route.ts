@@ -12,8 +12,14 @@ export async function DELETE(req: Request, ctx: Ctx) {
   if (denied) return denied;
   const { id } = await ctx.params;
   const device = getDeviceById(id);
-  if (!device) return jsonError(404, "not-found", "Device not found.");
+  if (!device)
+    return jsonError(404, "not-found", "Device not found.", { key: "deviceNotFound" });
   await revokeDevice(id);
-  await logActivity("device.revoked", `Revoked trusted device “${device.name}”`);
+  await logActivity(
+    "device.revoked",
+    `Revoked trusted device “${device.name}”`,
+    undefined,
+    { key: "deviceRevoked", params: { name: device.name } }
+  );
   return jsonOk({ ok: true });
 }

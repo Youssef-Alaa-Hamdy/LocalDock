@@ -17,17 +17,25 @@ export async function PATCH(req: Request, ctx: Ctx) {
   if ("deny" in guard) return guard.deny;
 
   const body = await readJsonBody<{ path?: string; name?: string }>(req);
-  if (!body?.path || !body.name) return jsonError(400, "bad-body", "Nothing to rename.");
+  if (!body?.path || !body.name)
+    return jsonError(400, "bad-body", "Nothing to rename.", { key: "badBody" });
   const target = resolveSafeInside(guard.share.rootPath, body.path);
-  if (!target.ok || !target.abs) return jsonError(400, "bad-path", "Invalid path.");
+  if (!target.ok || !target.abs)
+    return jsonError(400, "bad-path", "Invalid path.", { key: "badPath" });
   const newName = sanitizeName(body.name);
-  if (!newName) return jsonError(400, "bad-name", "That name cannot be used.");
+  if (!newName)
+    return jsonError(400, "bad-name", "That name cannot be used.", {
+      key: "badName",
+    });
 
   const dest = path.join(path.dirname(target.abs), newName);
   if (dest !== target.abs) {
     try {
       await fsp.access(dest);
-      return jsonError(409, "exists", `“${newName}” already exists.`);
+      return jsonError(409, "exists", `“${newName}” already exists.`, {
+        key: "itemExists",
+        params: { name: newName },
+      });
     } catch {
       /* ok */
     }
@@ -36,13 +44,24 @@ export async function PATCH(req: Request, ctx: Ctx) {
     } catch (e) {
       const code = (e as NodeJS.ErrnoException).code;
       if (code === "ENOENT")
-        return jsonError(404, "not-found", "The item no longer exists.");
-      return jsonError(500, "rename-failed", "The item could not be renamed.");
+        return jsonError(404, "not-found", "The item no longer exists.", { key: "notFound" });
+      return jsonError(500, "rename-failed", "The item could not be renamed.", {
+        key: "renameFailed",
+      });
     }
   }
   await logActivity(
     "file.renamed",
-    `Renamed “${path.posix.basename(body.path)}” to “${newName}” in “${guard.share.name}”`
+    `Renamed “${path.posix.basename(body.path)}” to “${newName}” in “${guard.share.name}”`,
+    undefined,
+    {
+      key: "entryRenamed",
+      params: {
+        from: path.posix.basename(body.path),
+        to: newName,
+        share: guard.share.name,
+      },
+    }
   );
   return jsonOk({ ok: true, name: newName });
 }
@@ -55,20 +74,37 @@ export async function DELETE(req: Request, ctx: Ctx) {
 
   const url = new URL(req.url);
   const target = resolveSafeInside(guard.share.rootPath, url.searchParams.get("path") ?? "");
-  if (!target.ok || !target.abs) return jsonError(400, "bad-path", "Invalid path.");
+  if (!target.ok || !target.abs)
+    return jsonError(400, "bad-path", "Invalid path.", { key: "badPath" });
 
   try {
     await fsp.rm(target.abs, { recursive: true, force: false });
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") return jsonError(404, "not-found", "Already deleted.");
+    if (code === "ENOENT")
+        return jsonError(404, "not-found", "Already deleted.", { key: "notFound" });
     if (code === "EACCES" || code === "EPERM")
-      return jsonError(403, "permission", "The system refused to delete this item.");
-    return jsonError(500, "delete-failed", "The item could not be deleted.");
+      return jsonError(
+        403,
+        "permission",
+        "The system refused to delete this item.",
+        { key: "deleteFailed" }
+      );
+    return jsonError(500, "delete-failed", "The item could not be deleted.", {
+        key: "deleteFailed",
+      });
   }
   await logActivity(
     "file.deleted",
-    `Deleted “${path.posix.basename(target.rel ?? "")}” from “${guard.share.name}”`
+    `Deleted “${path.posix.basename(target.rel ?? "")}” from “${guard.share.name}”`,
+    undefined,
+    {
+      key: "entryDeleted",
+      params: {
+        name: path.posix.basename(target.rel ?? ""),
+        share: guard.share.name,
+      },
+    }
   );
   return jsonOk({ ok: true });
 }

@@ -46,9 +46,11 @@ import {
   Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useI18n } from "@/lib/localdock/i18n";
 
 /** Share card + its manage sheet (access, guest, devices, danger zone). */
 export function ShareCard({ share, className }: { share: Share; className?: string }) {
+  const { t } = useI18n();
   const [qrOpen, setQrOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -62,10 +64,10 @@ export function ShareCard({ share, className }: { share: Share; className?: stri
     try {
       await navigator.clipboard.writeText(link);
       setCopied(true);
-      toast.success("Link copied — anyone on your network can open it");
+      toast.success(t.shareCard.copiedToast);
       setTimeout(() => setCopied(false), 1800);
     } catch {
-      toast.error("Couldn't copy the link.");
+      toast.error(t.shareCard.copyFailToast);
     }
   };
 
@@ -84,33 +86,33 @@ export function ShareCard({ share, className }: { share: Share; className?: stri
           <div className="min-w-0 flex-1">
             <p className="truncate text-[15px] font-semibold tracking-tight">{share.name}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {formatBytes(share.sizeBytes)} · {share.itemCount} items
+              {formatBytes(share.sizeBytes)} · {t.shareCard.nItems(share.itemCount)}
             </p>
           </div>
           <button
             onClick={() => setManageOpen(true)}
             className="rounded-lg p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-muted hover:text-foreground group-hover:opacity-100"
-            aria-label={`Manage ${share.name}`}
+            aria-label={t.shareCard.manageAria(share.name)}
           >
             <Settings2 className="size-4" />
           </button>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <Badge ok>{share.access === "read" ? "Read only" : "Read & write"}</Badge>
+          <Badge ok>{share.access === "read" ? t.shareCard.readOnly : t.shareCard.readWrite}</Badge>
           <Badge ok={share.guestEnabled}>
-            {share.guestEnabled ? "Guest link on" : "Devices only"}
+            {share.guestEnabled ? t.shareCard.guestOn : t.shareCard.devicesOnly}
           </Badge>
         </div>
 
-        <code className="mt-3 block truncate rounded-lg bg-muted/50 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+        <code dir="ltr" className="mt-3 block truncate rounded-lg bg-muted/50 px-2.5 py-1.5 text-[11px] text-muted-foreground">
           /?s={share.slug}
         </code>
 
         <div className="mt-3.5 flex items-center gap-1.5">
           <Button size="sm" className="h-8 flex-1 rounded-xl" onClick={() => openFiles(share.id, "")}>
             <FolderOpen className="size-4" />
-            Open
+            {t.shareCard.open}
           </Button>
           <Button size="sm" variant="outline" className="h-8 rounded-xl" onClick={copy}>
             {copied ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}
@@ -120,7 +122,7 @@ export function ShareCard({ share, className }: { share: Share; className?: stri
             variant="outline"
             className="h-8 rounded-xl"
             onClick={() => setQrOpen(true)}
-            aria-label="Show QR"
+            aria-label={t.shareCard.qrAria}
           >
             <QrCode className="size-4" />
           </Button>
@@ -130,8 +132,8 @@ export function ShareCard({ share, className }: { share: Share; className?: stri
       <QrDialog
         open={qrOpen}
         onOpenChange={setQrOpen}
-        title={`Share “${share.name}”`}
-        description="Scan with any device on this network — or send the link."
+        title={t.shareCard.qrTitle(share.name)}
+        description={t.shareCard.qrHint}
         qrUrl={`/api/qr?text=${encodeURIComponent(link)}`}
         link={link}
       />
@@ -165,6 +167,7 @@ function ShareManageDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
+  const { t } = useI18n();
   const [name, setName] = useState(share.name);
   const [access, setAccess] = useState<"read" | "readwrite">(share.access);
   const [guest, setGuest] = useState(share.guestEnabled);
@@ -196,7 +199,7 @@ function ShareManageDialog({
         guestEnabled: guest,
         allowedDevices: deviceMode === "all" ? "all" : selected,
       });
-      toast.success("Sharing settings updated");
+      toast.success(t.shareCard.updatedToast);
       refresh.refreshShares();
       onOpenChange(false);
     } catch (e) {
@@ -209,7 +212,7 @@ function ShareManageDialog({
   const remove = async () => {
     try {
       await Api.deleteShare(share.id);
-      toast.success("Stopped sharing — files stay untouched on disk");
+      toast.success(t.shareCard.stoppedToast);
       refresh.refreshShares();
       refresh.refreshSystem();
       onOpenChange(false);
@@ -225,17 +228,17 @@ function ShareManageDialog({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Eye className="size-4 text-primary" />
-              Manage “{share.name}”
+              {t.shareCard.manageTitle(share.name)}
             </DialogTitle>
             <DialogDescription>
-              Who can see this folder, and what they can do with it.
+              {t.shareCard.manageDesc}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="ld-scroll max-h-[65vh] space-y-5 overflow-y-auto pr-1">
+          <div className="ld-scroll max-h-[65vh] space-y-5 overflow-y-auto pe-1">
             <div className="space-y-2">
               <Label htmlFor="m-name" className="text-xs font-semibold">
-                Name
+                {t.shareCard.nameLabel}
               </Label>
               <div className="flex items-center gap-2">
                 <Input id="m-name" value={name} onChange={(e) => setName(e.target.value)} className="rounded-xl" />
@@ -243,7 +246,7 @@ function ShareManageDialog({
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs font-semibold">Access</Label>
+              <Label className="text-xs font-semibold">{t.shareCard.accessLabel}</Label>
               <RadioGroup value={access} onValueChange={(v) => setAccess(v as "read" | "readwrite")}>
                 <label
                   className={cn(
@@ -253,8 +256,8 @@ function ShareManageDialog({
                 >
                   <RadioGroupItem value="readwrite" id="m-rw" className="mt-0.5" />
                   <div>
-                    <p className="text-sm font-semibold">Read & Write</p>
-                    <p className="text-xs text-muted-foreground">Browse, download, upload, organize.</p>
+                    <p className="text-sm font-semibold">{t.shareCard.readWriteTitle}</p>
+                    <p className="text-xs text-muted-foreground">{t.shareCard.readWriteDesc}</p>
                   </div>
                 </label>
                 <label
@@ -265,34 +268,34 @@ function ShareManageDialog({
                 >
                   <RadioGroupItem value="read" id="m-ro" className="mt-0.5" />
                   <div>
-                    <p className="text-sm font-semibold">Read Only</p>
-                    <p className="text-xs text-muted-foreground">Browse and download only.</p>
+                    <p className="text-sm font-semibold">{t.shareCard.readOnlyTitle}</p>
+                    <p className="text-xs text-muted-foreground">{t.shareCard.readOnlyDesc}</p>
                   </div>
                 </label>
               </RadioGroup>
             </div>
 
             <label className="flex items-center justify-between rounded-2xl border border-border p-3">
-              <div className="pr-3">
-                <p className="text-sm font-semibold">Guest browser access</p>
-                <p className="text-xs text-muted-foreground">Shareable link, no pairing needed.</p>
+              <div className="ps-3">
+                <p className="text-sm font-semibold">{t.shareCard.guestTitle}</p>
+                <p className="text-xs text-muted-foreground">{t.shareCard.guestDesc}</p>
               </div>
               <Switch checked={guest} onCheckedChange={setGuest} />
             </label>
 
             <div className="space-y-2.5">
-              <Label className="text-xs font-semibold">Device access</Label>
+              <Label className="text-xs font-semibold">{t.shareCard.deviceAccess}</Label>
               <RadioGroup
                 value={deviceMode}
                 onValueChange={(v) => setDeviceMode(v as "all" | "custom")}
               >
                 <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-border px-3 py-2.5">
                   <RadioGroupItem value="all" id="dev-all" />
-                  <span className="text-sm">All trusted devices</span>
+                  <span className="text-sm">{t.shareCard.allDevices}</span>
                 </label>
                 <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-border px-3 py-2.5">
                   <RadioGroupItem value="custom" id="dev-custom" />
-                  <span className="text-sm">Only specific devices</span>
+                  <span className="text-sm">{t.shareCard.specificDevices}</span>
                 </label>
               </RadioGroup>
 
@@ -300,7 +303,7 @@ function ShareManageDialog({
                 <div className="ld-scroll max-h-40 space-y-1.5 overflow-y-auto rounded-xl border border-border p-2">
                   {devices.length === 0 && (
                     <p className="px-2 py-3 text-center text-xs text-muted-foreground">
-                      No paired devices yet.
+                      {t.shareCard.noDevices}
                     </p>
                   )}
                   {devices.map((d) => (
@@ -325,9 +328,9 @@ function ShareManageDialog({
             </div>
 
             <div className="rounded-2xl border border-destructive/30 bg-destructive/[0.04] p-3.5">
-              <p className="text-sm font-semibold">Stop sharing</p>
+              <p className="text-sm font-semibold">{t.shareCard.stopSharing}</p>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Removes the share everywhere. Files on disk are never touched.
+                {t.shareCard.stopSharingNote}
               </p>
               <Button
                 variant="destructive"
@@ -336,18 +339,18 @@ function ShareManageDialog({
                 onClick={() => setConfirmDelete(true)}
               >
                 <Trash2 className="size-4" />
-                Stop sharing this folder
+                {t.shareCard.stopTitle}
               </Button>
             </div>
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t.common.cancel}
             </Button>
             <Button onClick={save} disabled={saving || !name.trim()}>
               {saving ? <Loader2 className="size-4 animate-spin" /> : <Pencil className="size-4" />}
-              Save changes
+              {t.common.saveChanges}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -356,19 +359,18 @@ function ShareManageDialog({
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Stop sharing “{share.name}”?</AlertDialogTitle>
+            <AlertDialogTitle>{t.shareCard.stopConfirmTitle(share.name)}</AlertDialogTitle>
             <AlertDialogDescription>
-              All devices and guest links lose access immediately. The folder and its files stay
-              exactly where they are on your computer.
+              {t.shareCard.stopConfirmDesc}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Keep sharing</AlertDialogCancel>
+            <AlertDialogCancel>{t.shareCard.keepSharing}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-white hover:bg-destructive/90"
               onClick={() => void remove()}
             >
-              Stop sharing
+              {t.shareCard.stopSharing}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

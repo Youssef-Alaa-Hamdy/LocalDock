@@ -47,7 +47,9 @@ export async function POST(req: Request) {
   if (denied) return denied;
   const body = await readJsonBody<CreateBody>(req);
   if (!body?.name || !body.name.trim()) {
-    return jsonError(400, "bad-name", "Please give this folder a name.");
+    return jsonError(400, "bad-name", "Please give this folder a name.", {
+      key: "needFolderName",
+    });
   }
 
   let rootAbs: string;
@@ -61,7 +63,9 @@ export async function POST(req: Request) {
   } else {
     const rawPath = (body.absPath || body.homeDirRel || "").trim();
     if (!rawPath) {
-      return jsonError(400, "bad-path", "Please select or enter a folder path to share.");
+      return jsonError(400, "bad-path", "Please select or enter a folder path to share.", {
+      key: "chooseFolder",
+    });
     }
 
     if (path.isAbsolute(rawPath)) {
@@ -100,7 +104,8 @@ export async function POST(req: Request) {
     {
       access: share.access,
       guest: share.guestEnabled,
-    }
+    },
+    { key: "shareCreated", params: { name: share.name } }
   );
   return jsonOk({ share }, 201);
 }

@@ -93,6 +93,7 @@ import {
   CalendarArrowUp,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useI18n } from "@/lib/localdock/i18n";
 import type { LucideIcon } from "lucide-react";
 
 type SortKey = "name" | "size" | "modified";
@@ -102,11 +103,11 @@ const TILE_MIN = 96;
 const TILE_MAX = 280;
 const TILE_DEFAULT = 160;
 /** One-tap presets inside the icon-size popover (Explorer-style zoom stops). */
-const TILE_PRESETS: { label: string; v: number }[] = [
-  { label: "S", v: 96 },
-  { label: "M", v: 144 },
-  { label: "L", v: 192 },
-  { label: "XL", v: 256 },
+const TILE_PRESETS: { v: number }[] = [
+  { v: 96 },
+  { v: 144 },
+  { v: 192 },
+  { v: 256 },
 ];
 
 /** Directory fingerprint used for live refresh (count + total size + newest mtime). */
@@ -164,6 +165,7 @@ export function FileBrowser({
   initialPath?: string;
   embedded?: boolean;
 }) {
+  const { t } = useI18n();
   const [path, setPath] = useState(initialPath);
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -277,13 +279,13 @@ export function FileBrowser({
           if (delta > 0 && dt > 0) speedRef.current.set(a.id, { at: now, bytes: delta * 1000 / dt });
         }
       } else if (old && old.status === "active" && a.clientId !== myClientId.current) {
-        const verb = a.kind === "upload" ? "uploading" : "downloading";
+        const noun = a.kind === "upload" ? t.fileBrowser.upNoun : t.fileBrowser.downNoun;
         if (a.status === "done") {
-          toast.success(`${a.device} finished ${verb} “${a.name}”`, {
+          toast.success(t.fileBrowser.remoteFinishedToast(a.device, noun, a.name), {
             icon: a.kind === "upload" ? <ArrowUpFromLine className="size-4" /> : <ArrowDownToLine className="size-4" />,
           });
         } else if (a.status === "failed") {
-          toast.warning(`${a.device}'s ${verb} of “${a.name}” failed`, {
+          toast.warning(t.fileBrowser.remoteFailedToast(a.device, noun, a.name), {
             icon: <MonitorSmartphone className="size-4" />,
           });
         }
@@ -294,7 +296,7 @@ export function FileBrowser({
     });
     lastActivityRef.current = next;
     setActivity(incoming);
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fingerprintRef.current = ""; // moving to another folder resets the baseline
@@ -318,14 +320,14 @@ export function FileBrowser({
         /* server busy or unreachable — retry on the next tick */
       }
     };
-    const t = setInterval(() => void tick(), 3000);
+    const timer = setInterval(() => void tick(), 3000);
     const onVisible = () => {
       if (document.visibilityState === "visible") void tick();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
-      clearInterval(t);
+      clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [shareId, path, searchActive, load, applyActivity]);
@@ -359,8 +361,8 @@ export function FileBrowser({
   );
 
   useEffect(() => {
-    const t = setTimeout(() => void runServerSearch(query), 250);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => void runServerSearch(query), 250);
+    return () => clearTimeout(timer);
   }, [query, runServerSearch]);
 
   const visible = useMemo(() => {
@@ -409,7 +411,7 @@ export function FileBrowser({
       name: entry.name,
       size: entry.size,
     });
-    toast.success(`Downloading ${entry.name} — track it in the Transfer Center`, {
+    toast.success(t.fileBrowser.downloadingToast(entry.name), {
       icon: <ArrowDownToLine className="size-4" />,
     });
   };
@@ -422,8 +424,8 @@ export function FileBrowser({
     }
     toast.success(
       list.length === 1
-        ? `Uploading ${list[0].name}`
-        : `Uploading ${list.length} files (${formatBytes(list.reduce((a, f) => a + f.size, 0))})`
+        ? t.fileBrowser.uploadingToast(list[0].name)
+        : t.fileBrowser.uploadingNToast(list.length, formatBytes(list.reduce((a, f) => a + f.size, 0)))
     );
   };
 
@@ -450,8 +452,8 @@ export function FileBrowser({
     const total = pick.entries.reduce((a, e) => a + e.file.size, 0);
     toast.success(
       pick.entries.length === 1
-        ? `Uploading ${pick.entries[0].file.name}`
-        : `Uploading folder with ${pick.entries.length} files (${formatBytes(total)})`
+        ? t.fileBrowser.uploadingToast(pick.entries[0].file.name)
+        : t.fileBrowser.uploadingFolderToast(pick.entries.length, formatBytes(total))
     );
   };
 
@@ -461,7 +463,7 @@ export function FileBrowser({
     setBusy(true);
     try {
       await Api.createFolder(shareId, path, name);
-      toast.success(`Folder “${name}” created`);
+      toast.success(t.fileBrowser.folderCreatedToast(name));
       setNewFolderOpen(false);
       setNewFolderName("");
       await load(path);
@@ -483,7 +485,7 @@ export function FileBrowser({
     setBusy(true);
     try {
       await Api.renameEntry(shareId, joinPath(path, renameTarget.name), name);
-      toast.success("Renamed");
+      toast.success(t.fileBrowser.renamedToast);
       setRenameTarget(null);
       await load(path);
     } catch (e) {
@@ -497,13 +499,13 @@ export function FileBrowser({
     if (!deleteTargets) return;
     setBusy(true);
     try {
-      for (const t of deleteTargets) {
-        await Api.deleteEntry(shareId, joinPath(path, t.name));
+      for (const target of deleteTargets) {
+        await Api.deleteEntry(shareId, joinPath(path, target.name));
       }
       toast.success(
         deleteTargets.length === 1
-          ? `“${deleteTargets[0].name}” deleted`
-          : `${deleteTargets.length} items deleted`
+          ? t.fileBrowser.deletedToast(deleteTargets[0].name)
+          : t.fileBrowser.nDeletedToast(deleteTargets.length)
       );
       setDeleteTargets(null);
       setSelected(new Set());
@@ -581,10 +583,10 @@ export function FileBrowser({
       {/* Toolbar — two slim rows: path/status, then controls. Nothing floats. */}
       <div className="flex items-center gap-2">
         {/* breadcrumbs */}
-        <nav aria-label="Breadcrumb" className="ld-scroll flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto text-sm">
+        <nav aria-label={t.fileBrowser.breadcrumbAria} className="ld-scroll flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto text-sm">
           {crumbs.map((c, i) => (
             <span key={c.path} className="flex shrink-0 items-center">
-              {i > 0 && <ChevronRight className="mx-0.5 size-3.5 text-muted-foreground/60" />}
+              {i > 0 && <ChevronRight className="mx-0.5 size-3.5 rtl:-scale-x-100 text-muted-foreground/60" />}
               <button
                 onClick={() => {
                   setQuery("");
@@ -607,21 +609,21 @@ export function FileBrowser({
         {/* desktop status cluster */}
         <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
           {serverSearch === false && searchResults !== null && (
-            <span className="font-medium text-primary">search results</span>
+            <span className="font-medium text-primary">{t.fileBrowser.searchResults}</span>
           )}
           {!writable && (
-            <span className="rounded-full bg-muted px-2 py-0.5 font-semibold">Read only</span>
+            <span className="rounded-full bg-muted px-2 py-0.5 font-semibold">{t.fileBrowser.readOnly}</span>
           )}
           <span className="tnum hidden sm:inline">
-            {visible.length} item{visible.length === 1 ? "" : "s"} · {formatBytes(totalSize)}
+            {t.fileBrowser.nItemsSize(visible.length, formatBytes(totalSize))}
           </span>
           {!searchActive && (
             <span
               className="hidden items-center gap-1.5 sm:flex"
-              title="This folder refreshes automatically"
+              title={t.fileBrowser.liveTitle}
             >
               <span className="size-1.5 rounded-full bg-success dot-pulse" />
-              Live
+              {t.fileBrowser.live}
             </span>
           )}
         </div>
@@ -630,19 +632,19 @@ export function FileBrowser({
       {/* controls row — search grows, everything else is a compact icon */}
       <div className="mt-1.5 flex items-center gap-1.5">
         <div className="relative min-w-0 flex-1 sm:max-w-56">
-          <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search…"
-            className="h-9 w-full rounded-xl pl-8"
-            aria-label="Search files"
+            placeholder={t.common.search}
+            className="h-9 w-full rounded-xl ps-8"
+            aria-label={t.fileBrowser.searchAria}
           />
           {query && (
             <button
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              className="absolute end-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               onClick={() => setQuery("")}
-              aria-label="Clear search"
+              aria-label={t.fileBrowser.clearSearchAria}
             >
               <X className="size-3.5" />
             </button>
@@ -655,8 +657,8 @@ export function FileBrowser({
               size="icon"
               variant="outline"
               className="size-9 shrink-0 rounded-xl"
-              aria-label="Sort options"
-              title="Sort"
+              aria-label={t.fileBrowser.sortAria}
+              title={t.fileBrowser.sortTitle}
             >
               {sort === "name" ? (
                 sortAsc ? <ArrowUpAZ className="size-4" /> : <ArrowDownAZ className="size-4" />
@@ -667,23 +669,23 @@ export function FileBrowser({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="rounded-xl">
             <DropdownMenuItem onClick={() => { setSort("name"); setSortAsc(true); }}>
-              <ArrowUpAZ className="size-4" /> Name (A→Z)
+              <ArrowUpAZ className="size-4" /> {t.fileBrowser.sortNameAsc}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => { setSort("name"); setSortAsc(false); }}>
-              <ArrowDownAZ className="size-4" /> Name (Z→A)
+              <ArrowDownAZ className="size-4" /> {t.fileBrowser.sortNameDesc}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => { setSort("modified"); setSortAsc(false); }}>
-              <CalendarArrowDown className="size-4" /> Newest first
+              <CalendarArrowDown className="size-4" /> {t.fileBrowser.sortNewest}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => { setSort("modified"); setSortAsc(true); }}>
-              <CalendarArrowUp className="size-4" /> Oldest first
+              <CalendarArrowUp className="size-4" /> {t.fileBrowser.sortOldest}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => { setSort("size"); setSortAsc(false); }}>
-              <Package className="size-4" /> Largest first
+              <Package className="size-4" /> {t.fileBrowser.sortLargest}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => { setSort("size"); setSortAsc(true); }}>
-              <Package className="size-4" /> Smallest first
+              <Package className="size-4" /> {t.fileBrowser.sortSmallest}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -692,14 +694,14 @@ export function FileBrowser({
           <button
             onClick={() => setView("grid")}
             className={cn("p-2 transition-colors", view === "grid" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted")}
-            aria-label="Grid view"
+            aria-label={t.fileBrowser.gridAria}
           >
             <Grid2X2 className="size-4" />
           </button>
           <button
             onClick={() => setView("list")}
             className={cn("p-2 transition-colors", view === "list" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted")}
-            aria-label="List view"
+            aria-label={t.fileBrowser.listAria}
           >
             <List className="size-4" />
           </button>
@@ -714,19 +716,19 @@ export function FileBrowser({
                 size="icon"
                 variant="outline"
                 className="size-9 shrink-0 rounded-xl"
-                aria-label="Icon size"
-                title="Icon size"
+                aria-label={t.fileBrowser.iconSizeAria}
+                title={t.fileBrowser.iconSizeTitle}
               >
                 <Scaling className="size-4" />
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-60 rounded-xl p-3">
               <div className="flex items-center justify-between text-xs font-semibold">
-                <span>Icon size</span>
+                <span>{t.fileBrowser.iconSizeTitle}</span>
                 <span className="tnum text-muted-foreground">{tilePct}%</span>
               </div>
               <div className="mt-2 grid grid-cols-4 gap-1">
-                {TILE_PRESETS.map((p) => (
+                {TILE_PRESETS.map((p, idx) => (
                   <button
                     key={p.v}
                     onClick={() => changeTile(p.v)}
@@ -737,7 +739,7 @@ export function FileBrowser({
                         : "border-border text-muted-foreground hover:bg-muted"
                     )}
                   >
-                    {p.label}
+                    {[t.fileBrowser.tileS, t.fileBrowser.tileM, t.fileBrowser.tileL, t.fileBrowser.tileXL][idx]}
                   </button>
                 ))}
               </div>
@@ -749,7 +751,7 @@ export function FileBrowser({
                 value={tile}
                 onChange={(e) => changeTile(Number(e.target.value))}
                 className="ld-zoom mt-3 w-full"
-                aria-label="Grid icon size"
+                aria-label={t.fileBrowser.gridIconSizeAria}
               />
             </PopoverContent>
           </Popover>
@@ -757,18 +759,18 @@ export function FileBrowser({
 
         {/* core actions — always visible in the toolbar, nothing floating */}
         {writable && (
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <div className="ms-auto flex shrink-0 items-center gap-1.5">
             <Button size="sm" className="h-9 rounded-xl px-2.5 sm:px-3" onClick={() => uploadRef.current?.click()}>
               <Upload className="size-4" />
-              <span className="hidden sm:inline">Upload</span>
+              <span className="hidden sm:inline">{t.fileBrowser.upload}</span>
             </Button>
             <Button
               size="icon"
               variant="outline"
               className="size-9 rounded-xl"
               onClick={() => void uploadFolderFromDevice()}
-              aria-label="Upload folder from this device"
-              title="Upload folder from this device"
+              aria-label={t.fileBrowser.uploadFolderAria}
+              title={t.fileBrowser.uploadFolderAria}
             >
               <FolderUp className="size-4" />
             </Button>
@@ -777,8 +779,8 @@ export function FileBrowser({
               variant="outline"
               className="size-9 rounded-xl"
               onClick={() => setNewFolderOpen(true)}
-              aria-label="New folder"
-              title="New folder"
+              aria-label={t.fileBrowser.newFolderAria}
+              title={t.fileBrowser.newFolderAria}
             >
               <FolderPlus className="size-4" />
             </Button>
@@ -789,18 +791,18 @@ export function FileBrowser({
       {/* mobile status line (desktop shows the same info beside breadcrumbs) */}
       <div className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground sm:hidden">
         <span className="tnum">
-          {visible.length} item{visible.length === 1 ? "" : "s"} · {formatBytes(totalSize)}
+          {t.fileBrowser.nItemsSize(visible.length, formatBytes(totalSize))}
         </span>
         {serverSearch === false && searchResults !== null && (
-          <span className="font-medium text-primary">search results</span>
+          <span className="font-medium text-primary">{t.fileBrowser.searchResults}</span>
         )}
         {!writable && (
-          <span className="rounded-full bg-muted px-1.5 py-0.5 font-semibold">Read only</span>
+          <span className="rounded-full bg-muted px-1.5 py-0.5 font-semibold">{t.fileBrowser.readOnly}</span>
         )}
         {!searchActive && (
-          <span className="ml-auto flex shrink-0 items-center gap-1">
+          <span className="ms-auto flex shrink-0 items-center gap-1">
             <span className="size-1.5 rounded-full bg-success dot-pulse" />
-            Live
+            {t.fileBrowser.live}
           </span>
         )}
       </div>
@@ -811,13 +813,13 @@ export function FileBrowser({
           <div className="flex items-center gap-2 px-3 pb-1 pt-2">
             <ArrowUpFromLine className="size-3.5 shrink-0 text-primary" />
             <p className="min-w-0 truncate text-xs font-semibold">
-              Uploading {activeUploads.length} file{activeUploads.length === 1 ? "" : "s"}
+              {t.fileBrowser.uploadingN(activeUploads.length)}
               {" "}
               <span className="font-normal text-muted-foreground">
-                to {activeUploads[0].shareId === shareId ? "this shared folder" : activeUploads[0].shareName}
+                {t.fileBrowser.uploadingTo(activeUploads[0].shareId === shareId ? t.fileBrowser.thisFolder : activeUploads[0].shareName)}
               </span>
             </p>
-            <span className="tnum ml-auto shrink-0 text-xs font-bold text-primary">
+            <span className="tnum ms-auto shrink-0 text-xs font-bold text-primary">
               {Math.round(uploadsPct)}%
             </span>
           </div>
@@ -845,19 +847,19 @@ export function FileBrowser({
                         {i.shareId === shareId ? `/${i.path}` : i.shareName}
                       </span>
                     )}
-                    <span className="tnum ml-auto shrink-0 font-semibold">
-                      {i.status === "queued" ? "Queued" : `${Math.round(p)}%`}
+                    <span className="tnum ms-auto shrink-0 font-semibold">
+                      {i.status === "queued" ? t.fileBrowser.queued : `${Math.round(p)}%`}
                       {i.status === "active" && i.speedBps > 0 && (
-                        <span className="ml-1 font-normal text-muted-foreground">{formatSpeed(i.speedBps)}</span>
+                        <span className="ms-1 font-normal text-muted-foreground">{formatSpeed(i.speedBps)}</span>
                       )}
                       {i.status === "active" && i.etaSec !== null && (
-                        <span className="ml-1 font-normal text-muted-foreground">ETA {formatEta(i.etaSec)}</span>
+                        <span className="ms-1 font-normal text-muted-foreground">{t.fileBrowser.eta(formatEta(i.etaSec))}</span>
                       )}
                     </span>
                     <button
                       className="shrink-0 rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       onClick={() => void transfers.cancel(i.id)}
-                      aria-label={`Cancel upload of ${i.name}`}
+                      aria-label={t.fileBrowser.cancelUploadAria(i.name)}
                     >
                       <X className="size-3.5" />
                     </button>
@@ -865,14 +867,14 @@ export function FileBrowser({
                   <Progress
                     value={p}
                     className="mt-0.5 h-0.5 overflow-hidden rounded-full"
-                    aria-label={`${i.name} upload progress ${Math.round(p)}%`}
+                    aria-label={t.fileBrowser.uploadProgressAria(i.name, Math.round(p))}
                   />
                 </div>
               );
             })}
             {activeUploads.length > 4 && (
               <p className="text-[10px] font-medium text-muted-foreground">
-                + {activeUploads.length - 4} more — open the Transfer Center for details
+                {t.fileBrowser.nMore(activeUploads.length - 4)}
               </p>
             )}
           </div>
@@ -884,30 +886,31 @@ export function FileBrowser({
       {remoteActivity.length > 0 && (() => {
         const first = remoteActivity[0];
         const firstP = first.size > 0 ? Math.min(100, (first.transferred / first.size) * 100) : first.status === "done" ? 100 : 0;
-        const firstVerb = first.kind === "upload" ? "uploading" : "downloading";
+        const firstNoun = first.kind === "upload" ? t.fileBrowser.upNoun : t.fileBrowser.downNoun;
+        const firstVerb = first.kind === "upload" ? t.fileBrowser.uploading : t.fileBrowser.downloading;
         const summary =
           remoteActivity.length === 1
             ? `${first.device} · ${
                 first.status === "done"
-                  ? `finished ${firstVerb.replace("ing", "")}`
+                  ? t.fileBrowser.finishedVerb(firstNoun)
                   : first.status === "failed"
-                    ? `failed ${firstVerb}`
-                    : `${firstVerb}`
+                    ? t.fileBrowser.failedVerb(firstNoun)
+                    : firstVerb
               } ${first.name}${first.status === "active" ? ` · ${Math.round(firstP)}%` : ""}`
-            : `${remoteActivity.length} transfers on other devices`;
+            : t.fileBrowser.nRemoteTransfers(remoteActivity.length);
         return (
           <div className="rise mt-1.5 overflow-hidden rounded-xl border border-border/70 bg-muted/30">
             <button
               type="button"
               onClick={() => setRemoteOpen((v) => !v)}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left"
+              className="flex w-full items-center gap-2 px-3 py-2 text-start"
               aria-expanded={remoteOpen || remoteActivity.length === 1}
             >
               <MonitorSmartphone className="size-3.5 shrink-0 text-muted-foreground" />
               <span className="min-w-0 flex-1 truncate text-xs font-semibold">{summary}</span>
               <span className="flex shrink-0 items-center gap-1 text-[10px] font-medium text-muted-foreground">
                 <span className="size-1.5 rounded-full bg-success dot-pulse" />
-                live
+                {t.fileBrowser.live}
               </span>
               {remoteActivity.length > 1 && (
                 <ChevronDown
@@ -923,7 +926,9 @@ export function FileBrowser({
                 {remoteActivity.slice(0, 5).map((a) => {
                   const p = a.size > 0 ? Math.min(100, (a.transferred / a.size) * 100) : a.status === "done" ? 100 : 0;
                   const speed = speedRef.current.get(a.id)?.bytes ?? 0;
-                  const verb = a.kind === "upload" ? "Uploading" : "Downloading";
+                  const verb = a.status === "done"
+                    ? a.kind === "upload" ? t.fileBrowser.uploaded : t.fileBrowser.downloaded
+                    : a.kind === "upload" ? t.fileBrowser.uploading : t.fileBrowser.downloading;
                   const inThisFolder = a.kind === "upload" && (a.dirPath ?? "") === path;
                   return (
                     <div key={a.id}>
@@ -942,7 +947,7 @@ export function FileBrowser({
                         )}
                         <span className="min-w-0 truncate font-medium">
                           <span className="text-muted-foreground">{a.device} · </span>
-                          {a.status === "done" ? `${verb.replace("ing", "ed")} ` : a.status === "failed" ? "Failed: " : `${verb} `}
+                          {a.status === "done" ? `${verb} ` : a.status === "failed" ? t.fileBrowser.failedPrefix : `${verb} `}
                           {a.name}
                         </span>
                         {!inThisFolder && a.kind === "upload" && (a.dirPath ?? "") !== "" && (
@@ -950,16 +955,16 @@ export function FileBrowser({
                             /{a.dirPath}
                           </span>
                         )}
-                        <span className="tnum ml-auto shrink-0 font-semibold">
+                        <span className="tnum ms-auto shrink-0 font-semibold">
                           {a.status === "done" ? (
-                            <span className="text-success">Done</span>
+                            <span className="text-success">{t.fileBrowser.done}</span>
                           ) : a.status === "failed" ? (
-                            <span className="text-destructive">Failed</span>
+                            <span className="text-destructive">{t.fileBrowser.failedLabel}</span>
                           ) : (
                             <>
                               {Math.round(p)}%
                               {speed > 0 && (
-                                <span className="ml-1 font-normal text-muted-foreground">{formatSpeed(speed)}</span>
+                                <span className="ms-1 font-normal text-muted-foreground">{formatSpeed(speed)}</span>
                               )}
                             </>
                           )}
@@ -977,7 +982,7 @@ export function FileBrowser({
                   );
                 })}
                 {remoteActivity.length > 5 && (
-                  <p className="text-[10px] font-medium text-muted-foreground">+ {remoteActivity.length - 5} more</p>
+                  <p className="text-[10px] font-medium text-muted-foreground">{t.fileBrowser.nMoreShort(remoteActivity.length - 5)}</p>
                 )}
               </div>
             )}
@@ -993,21 +998,21 @@ export function FileBrowser({
           </div>
         ) : error ? (
           <div className="rounded-2xl border border-destructive/30 bg-destructive/[0.05] p-5 text-center">
-            <p className="text-sm font-semibold text-destructive">Couldn't open this folder</p>
+            <p className="text-sm font-semibold text-destructive">{t.fileBrowser.openFolderFail}</p>
             <p className="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">{error}</p>
             <Button variant="outline" size="sm" className="mt-3 rounded-xl" onClick={() => void load(path)}>
-              Try again
+              {t.common.tryAgain}
             </Button>
           </div>
         ) : visible.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border/80 py-16 text-center">
             <FolderPlus className="size-8 text-muted-foreground/50" />
             <p className="text-sm font-medium">
-              {query ? `Nothing matches “${query}”` : "This folder is empty"}
+              {query ? t.fileBrowser.nothingMatches(query) : t.fileBrowser.emptyFolder}
             </p>
             {!query && writable && (
               <p className="max-w-xs text-xs leading-relaxed text-muted-foreground">
-                Drop files here, upload from the toolbar, or create a folder to organize things.
+                {t.fileBrowser.emptyHint}
               </p>
             )}
           </div>
@@ -1044,16 +1049,16 @@ export function FileBrowser({
           <div className="overflow-hidden rounded-2xl border border-border/70 bg-card">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border/70 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
+                <tr className="border-b border-border/70 text-start text-[11px] uppercase tracking-wide text-muted-foreground">
                   <th className="w-10 px-3 py-2.5"></th>
                   <th className="cursor-pointer px-2 py-2.5 font-semibold" onClick={() => { setSort("name"); setSortAsc(sort === "name" ? !sortAsc : true); }}>
-                    Name {sort === "name" && (sortAsc ? "↑" : "↓")}
+                    {t.fileBrowser.nameCol} {sort === "name" && (sortAsc ? "↑" : "↓")}
                   </th>
                   <th className="hidden cursor-pointer px-2 py-2.5 font-semibold sm:table-cell" onClick={() => { setSort("size"); setSortAsc(sort === "size" ? !sortAsc : true); }}>
-                    Size {sort === "size" && (sortAsc ? "↑" : "↓")}
+                    {t.fileBrowser.sizeCol} {sort === "size" && (sortAsc ? "↑" : "↓")}
                   </th>
                   <th className="hidden cursor-pointer px-3 py-2.5 font-semibold md:table-cell" onClick={() => { setSort("modified"); setSortAsc(sort === "modified" ? !sortAsc : true); }}>
-                    Modified {sort === "modified" && (sortAsc ? "↑" : "↓")}
+                    {t.fileBrowser.modifiedCol} {sort === "modified" && (sortAsc ? "↑" : "↓")}
                   </th>
                   <th className="w-10 px-2 py-2.5"></th>
                 </tr>
@@ -1099,7 +1104,7 @@ export function FileBrowser({
         <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-primary/5 backdrop-blur-[2px]">
           <div className="rounded-2xl bg-card px-6 py-4 text-center shadow-pop">
             <Upload className="mx-auto size-6 text-primary" />
-            <p className="mt-2 text-sm font-semibold">Drop to upload here</p>
+            <p className="mt-2 text-sm font-semibold">{t.fileBrowser.dropToUpload}</p>
           </div>
         </div>
       )}
@@ -1114,7 +1119,7 @@ export function FileBrowser({
         >
           <div className="flex max-w-[calc(100vw-1.5rem)] flex-wrap items-center justify-center gap-2 rounded-2xl border border-border bg-foreground text-background shadow-pop px-3 py-2">
             <span className="tnum px-1 text-sm font-semibold">
-              {selected.size} selected
+              {t.fileBrowser.nSelected(selected.size)}
             </span>
             <Button
               size="sm"
@@ -1127,7 +1132,7 @@ export function FileBrowser({
               }}
             >
               <FileDown className="size-4" />
-              <span className="hidden sm:inline">Download</span>
+              <span className="hidden sm:inline">{t.common.download}</span>
             </Button>
             {writable && (
               <Button
@@ -1137,7 +1142,7 @@ export function FileBrowser({
                 onClick={() => setDeleteTargets(selectedEntries)}
               >
                 <Trash2 className="size-4" />
-                <span className="hidden sm:inline">Delete</span>
+                <span className="hidden sm:inline">{t.common.delete}</span>
               </Button>
             )}
             <Button
@@ -1145,7 +1150,7 @@ export function FileBrowser({
               variant="secondary"
               className="size-8 rounded-xl bg-background/15 text-background hover:bg-background/25"
               onClick={() => setSelected(new Set())}
-              aria-label="Clear selection"
+              aria-label={t.fileBrowser.clearSelectionAria}
             >
               <X className="size-4" />
             </Button>
@@ -1171,11 +1176,11 @@ export function FileBrowser({
       <Dialog open={!!renameTarget} onOpenChange={(v) => !v && setRenameTarget(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Rename</DialogTitle>
+            <DialogTitle>{t.fileBrowser.renameTitle}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
             <Label htmlFor="rename-input" className="sr-only">
-              New name
+              {t.fileBrowser.newNameSr}
             </Label>
             <Input
               id="rename-input"
@@ -1188,11 +1193,11 @@ export function FileBrowser({
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRenameTarget(null)}>
-              Cancel
+              {t.common.cancel}
             </Button>
             <Button onClick={doRename} disabled={busy}>
               {busy ? <Loader2 className="size-4 animate-spin" /> : <Pencil className="size-4" />}
-              Rename
+              {t.common.rename}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1202,23 +1207,23 @@ export function FileBrowser({
       <Dialog open={newFolderOpen} onOpenChange={setNewFolderOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>New folder</DialogTitle>
+            <DialogTitle>{t.fileBrowser.newFolderTitle}</DialogTitle>
           </DialogHeader>
           <Input
             value={newFolderName}
             onChange={(e) => setNewFolderName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && createFolder()}
-            placeholder="Folder name"
+            placeholder={t.fileBrowser.folderNamePlaceholder}
             autoFocus
             className="rounded-xl"
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setNewFolderOpen(false)}>
-              Cancel
+              {t.common.cancel}
             </Button>
             <Button onClick={createFolder} disabled={busy || !newFolderName.trim()}>
               {busy ? <Loader2 className="size-4 animate-spin" /> : <FolderPlus className="size-4" />}
-              Create
+              {t.common.create}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1229,20 +1234,19 @@ export function FileBrowser({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Delete {deleteTargets?.length === 1 ? `“${deleteTargets[0].name}”` : `${deleteTargets?.length} items`}?
+              {deleteTargets?.length === 1 ? t.fileBrowser.deleteOne(deleteTargets[0].name) : t.fileBrowser.deleteMany(deleteTargets?.length ?? 0)}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes {deleteTargets?.length === 1 ? "it" : "them"} from your
-              computer's disk. This cannot be undone.
+              {deleteTargets?.length === 1 ? t.fileBrowser.deleteOneDesc : t.fileBrowser.deleteManyDesc}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Keep</AlertDialogCancel>
+            <AlertDialogCancel>{t.fileBrowser.keep}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-white hover:bg-destructive/90"
               onClick={() => void doDelete()}
             >
-              Delete
+              {t.common.delete}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1373,7 +1377,7 @@ function EntryThumb({
       {category === "video" && (
         <span className="absolute inset-0 flex items-center justify-center bg-black/25">
           <span className="flex size-6 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm">
-            <Play className="size-3 translate-x-px fill-current" />
+            <Play className="size-3 translate-x-px rtl:-translate-x-px rtl:-scale-x-100 fill-current" />
           </span>
         </span>
       )}
@@ -1404,6 +1408,7 @@ function GridCard({
   onDelete: () => void;
   writable: boolean;
 }) {
+  const { t } = useI18n();
   const canThumb =
     entry.kind === "file" && (entry.category === "image" || entry.category === "video");
   return (
@@ -1425,7 +1430,7 @@ function GridCard({
     >
       <span
         className={cn(
-          "absolute left-1.5 top-1.5 z-10 size-4 rounded border bg-card transition-opacity",
+          "absolute start-1.5 top-1.5 z-10 size-4 rounded border bg-card transition-opacity",
           selected
             ? "border-primary bg-primary opacity-100"
             : "border-border opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
@@ -1460,9 +1465,9 @@ function GridCard({
         {entry.name}
       </p>
       <p className="pb-0.5 text-[10px] leading-4 text-muted-foreground">
-        {entry.kind === "dir" ? "Folder" : formatBytes(entry.size)}
+        {entry.kind === "dir" ? t.fileBrowser.folderType : formatBytes(entry.size)}
       </p>
-      <div className="absolute right-0.5 top-0.5 z-10">
+      <div className="absolute end-0.5 top-0.5 z-10">
         <RowMenu
           entry={entry}
           onOpen={onOpen}
@@ -1499,6 +1504,7 @@ function ListRow({
   onDelete: () => void;
   writable: boolean;
 }) {
+  const { t } = useI18n();
   const canThumb =
     entry.kind === "file" && (entry.category === "image" || entry.category === "video");
   return (
@@ -1529,7 +1535,7 @@ function ListRow({
             <span className="block truncate font-medium">{entry.name}</span>
             {/* Phones: the Size / Modified columns are hidden, surface them here */}
             <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground md:hidden">
-              <span className="sm:hidden">{entry.kind === "dir" ? "Folder" : formatBytes(entry.size)}</span>
+              <span className="sm:hidden">{entry.kind === "dir" ? t.fileBrowser.folderType : formatBytes(entry.size)}</span>
               <span className="hidden sm:inline">{formatDateTime(entry.modifiedAt)}</span>
             </span>
           </div>
@@ -1571,6 +1577,7 @@ function RowMenu({
   writable: boolean;
 }) {
   const [copied, setCopied] = useState(false);
+  const { t } = useI18n();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -1578,7 +1585,7 @@ function RowMenu({
           size="icon"
           variant="ghost"
           className="size-7 rounded-lg opacity-70 transition-opacity hover:bg-muted focus:opacity-100 md:opacity-0 md:group-hover:opacity-100 data-[state=open]:opacity-100"
-          aria-label={`Actions for ${entry.name}`}
+          aria-label={t.fileBrowser.actionsAria(entry.name)}
           onClick={(e) => e.stopPropagation()}
         >
           <MoreVertical className="size-4" />
@@ -1587,12 +1594,12 @@ function RowMenu({
       <DropdownMenuContent align="end" className="rounded-xl">
         <DropdownMenuItem onClick={onOpen}>
           {entry.kind === "dir" ? <Folder className="size-4" /> : <FileIcon entry={entry} className="size-4 [&>svg]:size-4" />}
-          Open
+          {t.common.open}
         </DropdownMenuItem>
         {entry.kind === "file" && (
           <DropdownMenuItem onClick={onDownload}>
             <ArrowDownToLine className="size-4" />
-            Download
+            {t.common.download}
           </DropdownMenuItem>
         )}
         <DropdownMenuItem
@@ -1607,18 +1614,18 @@ function RowMenu({
           }}
         >
           {copied ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}
-          Copy name
+          {t.fileBrowser.copyName}
         </DropdownMenuItem>
         {writable && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onRename}>
               <Pencil className="size-4" />
-              Rename
+              {t.common.rename}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive">
               <Trash2 className="size-4" />
-              Delete
+              {t.common.delete}
             </DropdownMenuItem>
           </>
         )}

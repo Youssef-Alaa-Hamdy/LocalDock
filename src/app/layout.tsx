@@ -1,13 +1,23 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Cairo, Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
-import { Toaster } from "@/components/ui/toaster";
 import { SonnerToaster } from "@/components/localdock/sonner-toaster";
+import { I18nProvider } from "@/lib/localdock/i18n/provider";
+import { ThemePackProvider } from "@/lib/localdock/i18n/themes";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
+});
+
+// Arabic companion to Geist — Next self-hosts it at build time (zero runtime
+// requests). Its variable instance feeds `--font-cairo`, which globals.css
+// splices into the sans stack whenever <html lang="ar">.
+const cairo = Cairo({
+  variable: "--font-cairo",
+  subsets: ["arabic", "latin"],
+  display: "swap",
 });
 
 const geistMono = Geist_Mono({
@@ -41,25 +51,44 @@ export const viewport: Viewport = {
   ],
 };
 
+/**
+ * Runs before first paint: restores the saved language (with <html lang/dir>
+ * so CSS direction + the Arabic font apply from byte zero) and theme pack.
+ * Mirrors the exact keys the i18n/theme providers read.
+ */
+const PREFS_BOOTSTRAP = `(() => {
+  try {
+    const d = document.documentElement;
+    const lang = localStorage.getItem("localdock.lang");
+    if (lang === "ar") { d.lang = "ar"; d.dir = "rtl"; }
+    const pack = localStorage.getItem("localdock.themePack");
+    if (pack && pack !== "teal" && /^(ocean|amethyst|sunset)$/.test(pack)) d.setAttribute("data-theme", pack);
+  } catch {}
+})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className={cairo.variable}>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
+        <script dangerouslySetInnerHTML={{ __html: PREFS_BOOTSTRAP }} />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange
         >
-          {children}
-          <Toaster />
-          <SonnerToaster />
+          <I18nProvider>
+            <ThemePackProvider>
+              {children}
+              <SonnerToaster />
+            </ThemePackProvider>
+          </I18nProvider>
         </ThemeProvider>
       </body>
     </html>

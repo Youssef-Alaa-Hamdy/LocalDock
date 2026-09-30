@@ -25,14 +25,15 @@ interface Body {
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as Body | null;
   if (!body?.code || typeof body.code !== "string") {
-    return jsonError(400, "bad-body", "A pairing code is required.");
+    return jsonError(400, "bad-body", "A pairing code is required.", { key: "needCode" });
   }
   const claimed = await consumePairingCode(body.code.trim().toUpperCase());
   if (!claimed) {
     return jsonError(
       401,
       "invalid-code",
-      "That code is invalid or expired. Generate a new one on the computer."
+      "That code is invalid or expired. Generate a new one on the computer.",
+      { key: "badCode" }
     );
   }
 
@@ -41,9 +42,12 @@ export async function POST(req: Request) {
     platform: (body.platform ?? "").trim() || "web",
   });
   const settings = getSettings();
-  await logActivity("device.paired", `Paired a new device: “${device.name}”`, {
-    platform: device.platform,
-  });
+  await logActivity(
+    "device.paired",
+    `Paired a new device: “${device.name}”`,
+    { platform: device.platform },
+    { key: "devicePaired", params: { name: device.name } }
+  );
 
   return jsonOk({
     device: { id: device.id, name: device.name, pairedAt: device.pairedAt },

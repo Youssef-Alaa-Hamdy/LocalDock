@@ -67,6 +67,12 @@ export interface ActivityEntry {
   message: string;
   at: number;
   meta?: Record<string, string | number | boolean | null>;
+  /**
+   * Optional structured localization hint (i18n `activity` dictionary key +
+   * params). When present the client renders the localized variant; the raw
+   * `message` stays as fallback for unknown keys / old entries.
+   */
+  loc?: { key: string; params?: Record<string, string | number> };
 }
 
 export interface LocalDockSettings {

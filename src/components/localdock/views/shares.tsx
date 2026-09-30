@@ -5,12 +5,14 @@ import { useNav } from "../nav";
 import { EmptyState } from "../empty-state";
 import { AddShareDialog } from "../add-share-dialog";
 import { ShareCard } from "../share-card";
+import { useI18n } from "@/lib/localdock/i18n/provider";
 import { FolderHeart, FolderPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useState } from "react";
 
 export function SharesView() {
+  const { t } = useI18n();
   const shares = useShares();
   const [addOpen, setAddOpen] = useState(false);
   const go = useNav((s) => s.go);
@@ -19,14 +21,14 @@ export function SharesView() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold tracking-tight">Shares</h2>
+          <h2 className="text-lg font-bold tracking-tight">{t.sharesView.title}</h2>
           <p className="text-sm text-muted-foreground">
-            Every folder you've made available on your network.
+            {t.sharesView.subtitle}
           </p>
         </div>
         <Button className="rounded-xl" onClick={() => setAddOpen(true)}>
           <FolderPlus className="size-4" />
-          Add Share
+          {t.sharesView.addShare}
         </Button>
       </div>
 
@@ -39,11 +41,11 @@ export function SharesView() {
       ) : (shares.data ?? []).length === 0 ? (
         <EmptyState
           icon={FolderHeart}
-          title="No shared folders yet"
-          description={"Your computer can become your personal local cloud.\nAdd your first folder — it takes ten seconds."}
-          actionLabel="Add Folder"
+          title={t.sharesView.emptyTitle}
+          description={t.sharesView.emptyDesc}
+          actionLabel={t.sharesView.addFolder}
           onAction={() => setAddOpen(true)}
-          secondaryLabel="Pair a device"
+          secondaryLabel={t.sharesView.pairDevice}
           onSecondary={() => go("devices")}
         />
       ) : (

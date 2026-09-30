@@ -14,13 +14,16 @@ export async function GET(req: Request, ctx: Ctx) {
   const { slug } = await ctx.params;
   const share = getShareBySlug(slug);
   if (!share) {
-    return jsonError(404, "not-found", "This link does not match any shared folder.");
+    return jsonError(404, "not-found", "This link does not match any shared folder.", {
+      key: "badSlug",
+    });
   }
   if (!share.guestEnabled) {
     return jsonError(
       403,
       "guest-disabled",
-      "This folder is private. Pair your device with the computer to access it."
+      "This folder is private. Pair your device with the computer to access it.",
+      { key: "privatePair" }
     );
   }
   return jsonOk({

@@ -66,7 +66,7 @@ export function NativePickCard({
     <button
       onClick={onClick}
       disabled={busy}
-      className="card-lift flex w-full items-center gap-3 rounded-2xl border-2 border-dashed border-border px-4 py-4 text-left transition-colors hover:border-primary/50 hover:bg-accent/30 disabled:opacity-60"
+      className="card-lift flex w-full items-center gap-3 rounded-2xl border-2 border-dashed border-border px-4 py-4 text-start transition-colors hover:border-primary/50 hover:bg-accent/30 disabled:opacity-60"
     >
       <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
         <HardDrive className="size-5" strokeWidth={1.8} />

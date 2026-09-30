@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Check, Copy, Timer } from "lucide-react";
 import { toast } from "sonner";
+import { useI18n } from "@/lib/localdock/i18n";
 
 /** Reusable QR presentation with copy-link support. */
 export function QrDialog({
@@ -30,6 +31,7 @@ export function QrDialog({
   link: string;
   expiresInSec?: number | null;
 }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
   const handleOpenChange = (v: boolean) => {
@@ -41,10 +43,10 @@ export function QrDialog({
     try {
       await navigator.clipboard.writeText(link);
       setCopied(true);
-      toast.success("Link copied");
+      toast.success(t.qr.copiedToast);
       setTimeout(() => setCopied(false), 1800);
     } catch {
-      toast.error("Couldn't copy — long-press the link below to copy it.");
+      toast.error(t.qr.copyFailToast);
     }
   };
 
@@ -60,7 +62,7 @@ export function QrDialog({
             { }
             <img
               src={qrUrl}
-              alt="QR code"
+              alt={t.qr.qrAlt}
               className="size-52 rounded-lg"
               width={208}
               height={208}
@@ -69,16 +71,16 @@ export function QrDialog({
           {typeof expiresInSec === "number" && expiresInSec > 0 && (
             <div className="flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
               <Timer className="size-3.5" />
-              Code expires in{" "}
-              <span className="tnum font-semibold text-foreground">
-                {Math.ceil(expiresInSec / 60) > 0
-                  ? `${Math.ceil(expiresInSec / 60)} min`
-                  : `${expiresInSec} s`}
-              </span>
+              {Math.ceil(expiresInSec / 60) > 0
+                ? t.qr.expiresMin(Math.ceil(expiresInSec / 60))
+                : t.qr.expiresSec(expiresInSec)}
             </div>
           )}
           <div className="flex w-full min-w-0 items-center gap-2">
-            <code className="ld-scroll min-w-0 flex-1 truncate rounded-xl border border-border bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground">
+            <code
+              dir="ltr"
+              className="ld-scroll min-w-0 flex-1 truncate rounded-xl border border-border bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground"
+            >
               {link}
             </code>
             <Button
@@ -86,7 +88,7 @@ export function QrDialog({
               variant="outline"
               className="size-10 shrink-0 rounded-xl"
               onClick={copy}
-              aria-label="Copy link"
+              aria-label={t.qr.copyAria}
             >
               {copied ? (
                 <Check className="size-4 text-success" />

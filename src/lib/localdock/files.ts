@@ -200,10 +200,10 @@ export async function streamFileResponse(
   try {
     stat = await fsp.stat(absPath);
   } catch {
-    return jsonError(404, "not-found", "This file no longer exists on the server.");
+    return jsonError(404, "not-found", "This file no longer exists on the server.", { key: "notFound" });
   }
   if (!stat.isFile()) {
-    return jsonError(400, "not-a-file", "The requested path is not a file.");
+    return jsonError(400, "not-a-file", "The requested path is not a file.", { key: "notFile" });
   }
   const size = stat.size;
   const range = parseRange(opts.rangeHeader ?? null, size);
@@ -293,8 +293,20 @@ export async function resolveNativeFolder(
   return { ok: true, abs: real };
 }
 
-export function jsonError(status: number, code: string, message: string): Response {
-  return Response.json({ error: { code, message } }, { status });
+export interface ErrorLoc {
+  /** Key into the client i18n `apiErrors` dictionary. */
+  key: string;
+  /** Optional interpolation params (e.g. { name }). */
+  params?: Record<string, string | number>;
+}
+
+export function jsonError(
+  status: number,
+  code: string,
+  message: string,
+  loc?: ErrorLoc
+): Response {
+  return Response.json({ error: { code, message, loc } }, { status });
 }
 
 export function jsonOk(data: unknown, status = 200): Response {

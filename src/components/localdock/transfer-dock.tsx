@@ -13,9 +13,11 @@ import { ChevronDown, ChevronUp, ArrowLeftRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatSpeed, pct } from "@/lib/localdock/client/format";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/lib/localdock/i18n";
 
 /** Floating mini transfer center — lives quietly, becomes visible when needed. */
 export function TransferDock() {
+  const { t } = useI18n();
   const items = useTransfers((s) => s.items);
   const connected = useTransfers((s) => s.connected);
   const [expanded, setExpanded] = useState(false);
@@ -42,16 +44,16 @@ export function TransferDock() {
       exit={{ opacity: 0, y: 24 }}
       transition={{ type: "spring", stiffness: 320, damping: 30 }}
       className={cn(
-        "fixed inset-x-3 bottom-3 z-40 mx-auto max-w-xl overflow-hidden rounded-2xl border border-border bg-card/95 shadow-pop backdrop-blur-xl lg:inset-x-auto lg:right-6 lg:bottom-6 lg:mx-0",
+        "fixed inset-x-3 bottom-3 z-40 mx-auto max-w-xl overflow-hidden rounded-2xl border border-border bg-card/95 shadow-pop backdrop-blur-xl lg:inset-x-auto lg:end-6 lg:bottom-6 lg:mx-0",
         !connected && "border-warning/50"
       )}
       role="region"
-      aria-label="Active transfers"
+      aria-label={t.transferDock.aria}
     >
       {/* div (not button): it contains interactive controls — nested buttons are invalid HTML */}
       <div
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left"
+        className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-start"
         role="button"
         aria-expanded={expanded}
         tabIndex={0}
@@ -62,7 +64,7 @@ export function TransferDock() {
         <div className="relative flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <ArrowLeftRight className="size-4" />
           {activeCount > 0 && (
-            <span className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+            <span className="absolute -end-1 -top-1 flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
               {activeCount}
             </span>
           )}
@@ -71,8 +73,8 @@ export function TransferDock() {
           <div className="flex items-center justify-between gap-2">
             <span className="truncate text-[13px] font-semibold">
               {active.length > 0
-                ? `Transferring ${visibleItems.length} item${visibleItems.length === 1 ? "" : "s"}`
-                : "Attention needed"}
+                ? t.transferDock.transferring(visibleItems.length)
+                : t.transferDock.attention}
             </span>
             <span className="tnum shrink-0 text-[11px] font-semibold text-muted-foreground">
               {speed > 0 ? formatSpeed(speed) : ""}
@@ -93,7 +95,7 @@ export function TransferDock() {
             e.stopPropagation();
             setExpanded((v) => !v);
           }}
-          aria-label={expanded ? "Collapse" : "Expand"}
+          aria-label={expanded ? t.transferDock.collapse : t.transferDock.expand}
         >
           {expanded ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
         </Button>
@@ -120,7 +122,7 @@ export function TransferDock() {
                   setExpanded(false);
                 }}
               >
-                Open Transfer Center
+                {t.transferDock.openCenter}
               </Button>
             </div>
           </motion.div>

@@ -48,9 +48,11 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useI18n } from "@/lib/localdock/i18n";
 import type { Website } from "@/lib/localdock/types";
 
 export function WebsitesView() {
+  const { t } = useI18n();
   const websites = useWebsites();
   const refresh = useRefresh();
   const [hostOpen, setHostOpen] = useState(false);
@@ -63,7 +65,7 @@ export function WebsitesView() {
       await Api.updateWebsite(site.id, { enabled: !site.enabled });
       refresh.refreshWebsites();
       refresh.refreshActivity();
-      toast.success(site.enabled ? `“${site.name}” stopped` : `“${site.name}” is live`);
+      toast.success(site.enabled ? t.websitesView.stoppedToast(site.name) : t.websitesView.liveToast(site.name));
     } catch (e) {
       toast.error((e as Error).message);
     }
@@ -73,7 +75,7 @@ export function WebsitesView() {
     if (!removeTarget) return;
     try {
       await Api.deleteWebsite(removeTarget.id);
-      toast.success("Website removed — files stay on disk");
+      toast.success(t.websitesView.removedToast);
       refresh.refreshWebsites();
     } catch (e) {
       toast.error((e as Error).message);
@@ -91,10 +93,10 @@ export function WebsitesView() {
     try {
       await navigator.clipboard.writeText(siteUrl(site));
       setCopied(site.id);
-      toast.success("Link copied");
+      toast.success(t.websitesView.copiedToast);
       setTimeout(() => setCopied(null), 1500);
     } catch {
-      toast.error("Couldn't copy the link.");
+      toast.error(t.websitesView.copyFailToast);
     }
   };
 
@@ -102,14 +104,14 @@ export function WebsitesView() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold tracking-tight">Websites</h2>
+          <h2 className="text-lg font-bold tracking-tight">{t.websitesView.title}</h2>
           <p className="text-sm text-muted-foreground">
-            Any HTML folder becomes a site for your whole network — one click.
+            {t.websitesView.subtitle}
           </p>
         </div>
         <Button className="rounded-xl" onClick={() => setHostOpen(true)}>
           <Plus className="size-4" />
-          Host Website
+          {t.websitesView.host}
         </Button>
       </div>
 
@@ -122,9 +124,9 @@ export function WebsitesView() {
       ) : (websites.data ?? []).length === 0 ? (
         <EmptyState
           icon={Globe}
-          title="No websites hosted yet"
-          description={"Have a folder with index.html?\nHost it and open it from your phone in seconds."}
-          actionLabel="Host Website"
+          title={t.websitesView.emptyTitle}
+          description={t.websitesView.emptyDesc}
+          actionLabel={t.websitesView.host}
           onAction={() => setHostOpen(true)}
         />
       ) : (
@@ -157,27 +159,27 @@ export function WebsitesView() {
                   >
                     {site.enabled ? (
                       <>
-                        <span className="size-1.5 rounded-full bg-success dot-pulse" /> Live
+                        <span className="size-1.5 rounded-full bg-success dot-pulse" /> {t.websitesView.live}
                       </>
                     ) : (
                       <>
-                        <span className="size-1.5 rounded-full bg-muted-foreground/50" /> Stopped
+                        <span className="size-1.5 rounded-full bg-muted-foreground/50" /> {t.websitesView.stopped}
                       </>
                     )}
                   </span>
                 </div>
                 <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-                  <code className="rounded bg-muted/60 px-1.5 py-0.5 font-mono">{friendly(site)}</code>
-                  <span>· hosted {timeAgo(site.createdAt)}</span>
+                  <code dir="ltr" className="rounded bg-muted/60 px-1.5 py-0.5 font-mono">{friendly(site)}</code>
+                  <span>· {t.websitesView.hostedAgo(timeAgo(site.createdAt))}</span>
                 </p>
               </div>
 
               <div className="flex items-center gap-1.5">
-                <div className="mr-1 flex items-center gap-1.5">
+                <div className="me-1 flex items-center gap-1.5">
                   <Switch
                     checked={site.enabled}
                     onCheckedChange={() => toggle(site)}
-                    aria-label={site.enabled ? "Stop hosting" : "Start hosting"}
+                    aria-label={site.enabled ? t.websitesView.stopAria : t.websitesView.startAria}
                   />
                 </div>
                 <Button
@@ -187,7 +189,7 @@ export function WebsitesView() {
                   onClick={() => window.open(siteUrl(site), "_blank")}
                 >
                   <ExternalLink className="size-4" />
-                  Open
+                  {t.websitesView.open}
                 </Button>
                 <Button size="sm" variant="outline" className="h-8 rounded-xl" onClick={() => copyUrl(site)}>
                   {copied === site.id ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}
@@ -197,7 +199,7 @@ export function WebsitesView() {
                   variant="outline"
                   className="h-8 rounded-xl"
                   onClick={() => setQrFor(site)}
-                  aria-label="Show QR"
+                  aria-label={t.websitesView.qrAria}
                 >
                   <QrCode className="size-4" />
                 </Button>
@@ -206,7 +208,7 @@ export function WebsitesView() {
                   variant="ghost"
                   className="h-8 rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => setRemoveTarget(site)}
-                  aria-label="Remove website"
+                  aria-label={t.websitesView.removeAria}
                 >
                   <Trash2 className="size-4" />
                 </Button>
@@ -222,8 +224,8 @@ export function WebsitesView() {
         <QrDialog
           open={!!qrFor}
           onOpenChange={() => setQrFor(null)}
-          title={`Share “${qrFor.name}”`}
-          description="Point any device on this network at this code."
+          title={t.websitesView.qrTitle(qrFor.name)}
+          description={t.websitesView.qrHint}
           qrUrl={`/api/qr?text=${encodeURIComponent(siteUrl(qrFor))}`}
           link={siteUrl(qrFor)}
         />
@@ -232,20 +234,19 @@ export function WebsitesView() {
       <AlertDialog open={!!removeTarget} onOpenChange={(v) => !v && setRemoveTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove “{removeTarget?.name}”?</AlertDialogTitle>
+            <AlertDialogTitle>{t.websitesView.removeTitle(removeTarget?.name ?? "")}</AlertDialogTitle>
             <AlertDialogDescription>
-              The site goes offline and leaves the list. The folder and its files stay untouched on
-              disk — you can host it again anytime.
+              {t.websitesView.removeDesc}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t.common.cancel}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-white hover:bg-destructive/90"
               onClick={() => void remove()}
             >
               <Trash2 className="size-4" />
-              Remove website
+              {t.websitesView.removeConfirm}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -263,6 +264,7 @@ function HostWebsiteDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
+  const { t } = useI18n();
   const [step, setStep] = useState<"pick" | "configure" | "done">("pick");
   const [pickedPath, setPickedPath] = useState("");
   /** Absolute OS path when the folder came from the native picker (desktop). */
@@ -293,7 +295,7 @@ function HostWebsiteDialog({
   const pickNative = async () => {
     setPicking(true);
     try {
-      const abs = await pickNativeFolder("Choose the website folder");
+      const abs = await pickNativeFolder(t.websitesView.pickerTitle);
       if (abs) {
         setPickedAbs(abs);
         setPickedPath("");
@@ -311,7 +313,7 @@ function HostWebsiteDialog({
     setHosting(true);
     try {
       const res = await Api.hostWebsite({
-        name: name.trim() || nameFromPath(pickedAbs ?? pickedPath) || "Website",
+        name: name.trim() || nameFromPath(pickedAbs ?? pickedPath) || t.websitesView.websiteFallback,
         ...(pickedAbs ? { absPath: pickedAbs } : { homeDirRel: pickedPath }),
         slug: slug.trim() || undefined,
       });
@@ -339,26 +341,27 @@ function HostWebsiteDialog({
           {step === "pick" && (
             <div className="space-y-4">
               <DialogHeader>
-                <DialogTitle>Host Website</DialogTitle>
+                <DialogTitle>{t.websitesView.dialogTitle}</DialogTitle>
                 <DialogDescription>
-                  Choose a folder on this computer that contains your static website (with an index.html file).
+                  {t.websitesView.dialogDesc}
                 </DialogDescription>
               </DialogHeader>
 
               <NativePickCard
-                title="Select website folder from computer"
-                sub="Pick the folder containing index.html"
+                title={t.websitesView.pickTitle}
+                sub={t.websitesView.pickSub}
                 busy={picking}
                 onClick={() => void pickNative()}
               />
 
               <div className="space-y-2 rounded-2xl border border-border bg-muted/30 p-3.5">
-                <p className="text-xs font-semibold text-foreground">Or enter path directly:</p>
+                <p className="text-xs font-semibold text-foreground">{t.websitesView.orPath}</p>
                 <div className="flex gap-2">
                   <Input
                     value={manualPath}
                     onChange={(e) => setManualPath(e.target.value)}
-                    placeholder="e.g. D:\MyWebsite"
+                    placeholder={t.websitesView.pathPlaceholder}
+                    dir="ltr"
                     className="rounded-xl font-mono text-xs"
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && manualPath.trim()) {
@@ -378,7 +381,7 @@ function HostWebsiteDialog({
                       setStep("configure");
                     }}
                   >
-                    Continue
+                    {t.common.continue}
                   </Button>
                 </div>
               </div>
@@ -388,7 +391,7 @@ function HostWebsiteDialog({
                 className="w-full rounded-xl gap-2"
                 onClick={() => setBrowserOpen(true)}
               >
-                Browse drives & folders on computer…
+                {t.websitesView.browse}
               </Button>
             </div>
           )}
@@ -396,57 +399,58 @@ function HostWebsiteDialog({
         {step === "configure" && (
           <>
             <DialogHeader>
-              <DialogTitle>Name your website</DialogTitle>
+              <DialogTitle>{t.websitesView.nameTitle}</DialogTitle>
               <DialogDescription>
-                It becomes available on your network the moment you press Host.
+                {t.websitesView.nameHint}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2.5 text-sm">
                 <FolderOpen className="size-4 shrink-0 text-primary" />
-                <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                <span dir="ltr" className="min-w-0 flex-1 truncate text-muted-foreground">
                   {pickedAbs ?? `Websites/${pickedPath}`}
                 </span>
                 <button
                   className="text-muted-foreground hover:text-foreground"
                   onClick={() => setStep("pick")}
-                  aria-label="Change folder"
+                  aria-label={t.websitesView.nameAria}
                 >
-                  change
+                  {t.websitesView.nameChange}
                 </button>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="site-name" className="text-xs font-semibold">
-                  Website name
+                  {t.websitesView.websiteName}
                 </Label>
                 <Input
                   id="site-name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="My Portfolio"
+                  placeholder={t.websitesView.namePlaceholder}
                   className="rounded-xl"
                   autoFocus
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="site-slug" className="text-xs font-semibold">
-                  Address (optional)
+                  {t.websitesView.addressLabel}
                 </Label>
                 <div className="flex items-center gap-1.5 rounded-xl border border-border bg-muted/30 px-3 py-2">
                   <input
                     id="site-slug"
                     value={slug}
                     onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))}
-                    placeholder="portfolio"
+                    placeholder={t.websitesView.addressPlaceholder}
+                    dir="ltr"
                     className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/60"
                   />
-                  <span className="shrink-0 text-xs text-muted-foreground">.localdock.local</span>
+                  <span dir="ltr" className="shrink-0 text-xs text-muted-foreground">{t.websitesView.addressSuffix}</span>
                 </div>
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setStep("pick")}>
-                Back
+                {t.common.back}
               </Button>
               <Button onClick={host} disabled={hosting}>
                 {hosting ? (
@@ -454,7 +458,7 @@ function HostWebsiteDialog({
                 ) : (
                   <Power className="size-4" />
                 )}
-                Host
+                {t.websitesView.hostVerb}
               </Button>
             </DialogFooter>
           </>
@@ -467,25 +471,25 @@ function HostWebsiteDialog({
                 <span className="flex size-6 items-center justify-center rounded-full bg-success/15 text-success">
                   <CheckCircle2 className="size-4" strokeWidth={2.5} />
                 </span>
-                Website is Live
+                {t.websitesView.successTitle}
               </DialogTitle>
               <DialogDescription>
-                “{hosted.name}” is being served from your computer right now.
+                {t.websitesView.successBody(hosted.name)}
               </DialogDescription>
             </DialogHeader>
             <div className="flex items-center gap-2 rounded-2xl border border-border bg-muted/40 p-3.5">
               <Globe className="size-4 shrink-0 text-success" />
-              <code className="min-w-0 flex-1 truncate text-sm font-medium">
+              <code dir="ltr" className="min-w-0 flex-1 truncate text-sm font-medium">
                 /sites/{hosted.slug}
               </code>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => onOpenChange(false)}>
-                Done
+                {t.common.done}
               </Button>
               <Button onClick={() => window.open(`/sites/${hosted.slug}`, "_blank")}>
                 <ExternalLink className="size-4" />
-                Open site
+                {t.websitesView.openSite}
               </Button>
             </DialogFooter>
           </>
@@ -497,9 +501,9 @@ function HostWebsiteDialog({
       open={browserOpen}
       onOpenChange={setBrowserOpen}
       mode="websites"
-      title="Host Website"
-      description="Choose the folder that contains your index.html."
-      confirmLabel="Continue"
+      title={t.websitesView.dialogTitle}
+      description={t.websitesView.pickStepDesc}
+      confirmLabel={t.common.continue}
       requireIndexHtml
       onSelect={(abs) => {
         setPickedAbs(abs);

@@ -12,7 +12,12 @@ import { resolveLinkToken } from "./link-tokens";
 export async function requireOwner(req: Request): Promise<Response | null> {
   const auth = getAuth(req);
   if (!isOwner(auth)) {
-    return jsonError(401, "unauthorized", "This operation requires the LocalDock owner console.");
+    return jsonError(
+      401,
+      "unauthorized",
+      "This operation requires the LocalDock owner console.",
+      { key: "unauthorized" }
+    );
   }
   return null;
 }
@@ -24,7 +29,14 @@ export async function shareGuard(
 ): Promise<{ share: Share; auth: AuthContext } | { deny: Response }> {
   const share = getShare(shareId);
   if (!share) {
-    return { deny: jsonError(404, "share-not-found", "This shared folder no longer exists.") };
+    return {
+      deny: jsonError(
+        404,
+        "share-not-found",
+        "This shared folder no longer exists.",
+        { key: "shareNotFound" }
+      ),
+    };
   }
   const auth = getAuth(req);
   let effectiveAuth: AuthContext = auth;
@@ -37,16 +49,20 @@ export async function shareGuard(
     if (tokenAuth) effectiveAuth = tokenAuth;
   }
   if (!canAccessShare(effectiveAuth, share, action)) {
-    void logActivity("security.denied", `Denied ${action} on “${share.name}”`, {
-      identity: effectiveAuth.kind,
-    });
+    void logActivity(
+      "security.denied",
+      `Denied ${action} on “${share.name}”`,
+      { identity: effectiveAuth.kind },
+      { key: "denied", params: { action: String(action), name: share.name } }
+    );
     return {
       deny: jsonError(
         403,
         "forbidden",
         share.guestEnabled
           ? "Your access level does not allow this action on this folder."
-          : "This folder is private. Pair your device or ask the owner to enable guest access."
+          : "This folder is private. Pair your device or ask the owner to enable guest access.",
+        { key: share.guestEnabled ? "forbidden" : "privateFolder" }
       ),
     };
   }

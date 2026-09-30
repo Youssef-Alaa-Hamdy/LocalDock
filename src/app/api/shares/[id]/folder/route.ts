@@ -22,16 +22,22 @@ export async function POST(req: Request, ctx: Ctx) {
 
   const body = await readJsonBody<Body>(req);
   const name = sanitizeName(body?.name ?? "");
-  if (!name) return jsonError(400, "bad-name", "That folder name cannot be used.");
+  if (!name)
+    return jsonError(400, "bad-name", "That folder name cannot be used.", {
+      key: "badName",
+    });
   // The destination may be the share root itself (path = ""), so use resolveSafe.
   const dirRes = resolveSafe(guard.share.rootPath, body?.path ?? "/");
   if (!dirRes.ok || !dirRes.abs)
-    return jsonError(400, "bad-path", "Invalid destination folder.");
+    return jsonError(400, "bad-path", "Invalid destination folder.", { key: "badPath" });
 
   const target = path.join(dirRes.abs, name);
   try {
     await fsp.access(target);
-    return jsonError(409, "exists", `“${name}” already exists in this folder.`);
+    return jsonError(409, "exists", `“${name}” already exists in this folder.`, {
+      key: "itemExists",
+      params: { name },
+    });
   } catch {
     /* good — does not exist */
   }
@@ -40,9 +46,21 @@ export async function POST(req: Request, ctx: Ctx) {
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
     if (code === "EACCES")
-      return jsonError(403, "permission", "The server cannot write inside this folder.");
-    return jsonError(500, "create-failed", "The folder could not be created.");
+      return jsonError(
+        403,
+        "permission",
+        "The server cannot write inside this folder.",
+        { key: "permission" }
+      );
+    return jsonError(500, "create-failed", "The folder could not be created.", {
+      key: "createFailed",
+    });
   }
-  await logActivity("file.created", `Created folder “${name}” in “${guard.share.name}”`);
+  await logActivity(
+    "file.created",
+    `Created folder “${name}” in “${guard.share.name}”`,
+    undefined,
+    { key: "folderCreated", params: { name, share: guard.share.name } }
+  );
   return jsonOk({ ok: true, name }, 201);
 }

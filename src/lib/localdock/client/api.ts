@@ -16,19 +16,50 @@ import type {
   UploadSessionInfo,
   Website,
 } from "../types";
+import { activeDictionary } from "../i18n/runtime";
 
 export interface ApiError extends Error {
   code: string;
   status: number;
   friendly: string;
+  /** Optional structured localization hint from the server. */
+  loc?: { key: string; params?: Record<string, string | number> };
 }
 
-export function makeApiError(status: number, code: string, message: string): ApiError {
+export function makeApiError(
+  status: number,
+  code: string,
+  message: string,
+  loc?: { key: string; params?: Record<string, string | number> }
+): ApiError {
   const err = new Error(message) as ApiError;
   err.code = code;
   err.status = status;
   err.friendly = message;
+  err.loc = loc;
   return err;
+}
+
+/**
+ * Best-effort localized text for any thrown error: uses the server's `loc`
+ * hint when present, else the raw message (already localized for errors we
+ * create client-side). Falls back to a generic localized line.
+ */
+export function apiErrorMessage(e: unknown): string {
+  const errors = activeDictionary().apiErrors;
+  const err = e as ApiError | undefined;
+  if (err && typeof err === "object" && err.loc) {
+    const value = (errors as Record<string, unknown>)[err.loc.key];
+    if (typeof value === "function") {
+      const name = err.loc.params?.name;
+      return (value as (n: string) => string)(
+        typeof name === "string" ? name : ""
+      );
+    }
+    if (typeof value === "string") return value;
+  }
+  if (err && err instanceof Error && err.message) return err.message;
+  return errors.generic;
 }
 
 let ownerKey: string | null = null;
@@ -120,11 +151,8 @@ export async function api<T>(
   try {
     res = await fetch(path, { ...init, headers, cache: "no-store" });
   } catch {
-    throw makeApiError(
-      0,
-      "network",
-      "Can't reach your computer. Check that both devices are on the same network — transfers resume automatically when it's back."
-    );
+    const errors = activeDictionary().apiErrors;
+    throw makeApiError(0, "network", errors.network);
   }
 
   if (init?.raw) return res as unknown as T;
@@ -137,11 +165,19 @@ export async function api<T>(
   }
 
   if (!res.ok) {
-    const err = (body as { error?: { code?: string; message?: string } })?.error;
+    const err = (body as {
+      error?: {
+        code?: string;
+        message?: string;
+        loc?: { key: string; params?: Record<string, string | number> };
+      };
+    })?.error;
+    const errors = activeDictionary().apiErrors;
     throw makeApiError(
       res.status,
       err?.code ?? `http-${res.status}`,
-      err?.message ?? "Something went wrong while talking to your computer."
+      err?.message ?? errors.generic,
+      err?.loc
     );
   }
   return body as T;

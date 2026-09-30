@@ -6,12 +6,14 @@ import { useNav } from "../nav";
 import { FileBrowser } from "../file-browser";
 import { EmptyState } from "../empty-state";
 import { AddShareDialog } from "../add-share-dialog";
+import { useI18n } from "@/lib/localdock/i18n/provider";
 import { cn } from "@/lib/utils";
 import { HardDrive, FolderPlus, FolderHeart, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function FilesView() {
+  const { t } = useI18n();
   const shares = useShares();
   const filesTarget = useNav((s) => s.filesTarget);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -36,9 +38,9 @@ export function FilesView() {
       <>
         <EmptyState
           icon={HardDrive}
-          title="Nothing to browse yet"
-          description={"Files live inside your shared folders.\nAdd a folder and it shows up here instantly."}
-          actionLabel="Add Folder"
+          title={t.filesView.emptyTitle}
+          description={t.filesView.emptyDesc}
+          actionLabel={t.filesView.addFolder}
           onAction={() => setAddOpen(true)}
         />
         <AddShareDialog open={addOpen} onOpenChange={setAddOpen} />
@@ -68,7 +70,11 @@ export function FilesView() {
                 "size-3.5",
                 share.access === "read" ? "text-muted-foreground" : "text-primary/70"
               )}
-              aria-label={share.access === "read" ? "Read only" : "Read and write"}
+              aria-label={
+                share.access === "read"
+                  ? t.filesView.readOnlyAria
+                  : t.filesView.readWriteAria
+              }
             />
           </button>
         ))}
@@ -79,7 +85,7 @@ export function FilesView() {
           onClick={() => setAddOpen(true)}
         >
           <FolderPlus className="size-4" />
-          Add
+          {t.filesView.add}
         </Button>
       </div>
 

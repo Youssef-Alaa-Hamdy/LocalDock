@@ -366,7 +366,8 @@ const ACTIVITY_MAX = 300;
 export async function logActivity(
   type: ActivityType,
   message: string,
-  meta?: Record<string, string | number | boolean | null>
+  meta?: Record<string, string | number | boolean | null>,
+  loc?: { key: string; params?: Record<string, string | number> }
 ): Promise<void> {
   try {
     const entries = readJson<ActivityEntry[]>(FILES.activity, []);
@@ -376,6 +377,7 @@ export async function logActivity(
       message,
       at: Date.now(),
       meta: meta ?? undefined,
+      loc,
     });
     if (entries.length > ACTIVITY_MAX) entries.length = ACTIVITY_MAX;
     await writeJson(FILES.activity, entries);

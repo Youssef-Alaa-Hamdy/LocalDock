@@ -2,6 +2,8 @@
 
 import { useSyncExternalStore, useEffect } from "react";
 import { useTheme } from "next-themes";
+import { useI18n } from "@/lib/localdock/i18n/provider";
+import { LOCALE_LIST, LOCALES, type Locale } from "@/lib/localdock/i18n/locales";
 import { useNav, type ViewKey } from "./nav";
 import { useSystem, useRefresh } from "./data-hooks";
 import { setLanIp } from "@/lib/localdock/client/lan";
@@ -18,11 +20,19 @@ import { SettingsView } from "./views/settings";
 import { cn } from "@/lib/utils";
 import { formatSpeed } from "@/lib/localdock/client/format";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Check,
   FolderHeart,
   Gauge,
   HardDrive,
   Laptop,
   LayoutDashboard,
+  Languages,
   Moon,
   ArrowLeftRight,
   Settings,
@@ -32,17 +42,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
-const NAV: { key: ViewKey; label: string; icon: typeof Gauge }[] = [
-  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { key: "shares", label: "Shares", icon: FolderHeart },
-  { key: "files", label: "Files", icon: HardDrive },
-  { key: "transfers", label: "Transfers", icon: ArrowLeftRight },
-  { key: "devices", label: "Devices", icon: Laptop },
-  { key: "websites", label: "Websites", icon: Globe },
-  { key: "settings", label: "Settings", icon: Settings },
+const NAV: { key: ViewKey; labelKey: "dashboard" | "shares" | "files" | "transfers" | "devices" | "websites" | "settings"; icon: typeof Gauge }[] = [
+  { key: "dashboard", labelKey: "dashboard", icon: LayoutDashboard },
+  { key: "shares", labelKey: "shares", icon: FolderHeart },
+  { key: "files", labelKey: "files", icon: HardDrive },
+  { key: "transfers", labelKey: "transfers", icon: ArrowLeftRight },
+  { key: "devices", labelKey: "devices", icon: Laptop },
+  { key: "websites", labelKey: "websites", icon: Globe },
+  { key: "settings", labelKey: "settings", icon: Settings },
 ];
 
 export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
+  const { t, locale, setLocale } = useI18n();
   const view = useNav((s) => s.view);
   const go = useNav((s) => s.go);
   const system = useSystem();
@@ -81,20 +92,21 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
   return (
     <div className="flex min-h-screen bg-background">
       {/* ---------------- Sidebar ---------------- */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-border/70 bg-sidebar lg:flex">
+      <aside className="fixed inset-y-0 start-0 z-30 hidden w-60 flex-col border-e border-border/70 bg-sidebar lg:flex">
         <div className="flex items-center gap-3 px-5 pb-5 pt-6">
           <LogoMark className="size-9 rounded-xl shadow-card" />
           <div>
             <div className="text-[15px] font-bold tracking-tight">LocalDock</div>
             <div className="text-[11px] font-medium text-muted-foreground">
-              Personal Local Cloud
+              {t.brand.tagline}
             </div>
           </div>
         </div>
 
-        <nav className="flex-1 space-y-1 px-3" aria-label="Main">
+        <nav className="flex-1 space-y-1 px-3" aria-label={t.nav.main}>
           {NAV.map((item) => {
             const active = view === item.key;
+            const label = t.nav[item.labelKey];
             return (
               <button
                 key={item.key}
@@ -114,7 +126,7 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
                   )}
                   strokeWidth={active ? 2.2 : 1.8}
                 />
-                <span className="flex-1 text-left">{item.label}</span>
+                <span className="flex-1 text-start">{label}</span>
                 {item.key === "transfers" && activeCount > 0 && (
                   <span className="tnum rounded-full bg-primary px-2 py-0.5 text-[11px] font-bold text-primary-foreground">
                     {activeCount}
@@ -129,29 +141,29 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
           <div className="rounded-2xl border border-border/70 bg-card p-4 shadow-card">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-muted-foreground">
-                {system.data?.serverName ?? "Server"}
+                {system.data?.serverName ?? t.settings.server}
               </span>
               <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
                 <StatusDot ok={online} />
-                {online ? "Online" : "Offline"}
+                {online ? t.status.online : t.status.offline}
               </span>
             </div>
             <div className="mt-2 flex items-baseline gap-1.5">
               <span className="tnum text-lg font-bold tracking-tight">
                 {globalSpeed > 0 ? formatSpeed(globalSpeed) : "—"}
               </span>
-              <span className="text-[11px] text-muted-foreground">current transfer</span>
+              <span className="text-[11px] text-muted-foreground">{t.status.currentTransfer}</span>
             </div>
           </div>
           <div className="mt-3 flex items-center justify-between px-1">
-            <span className="text-[11px] text-muted-foreground">Local network only</span>
+            <span className="text-[11px] text-muted-foreground">{t.brand.localOnly ?? ""}</span>
             {mounted && (
               <Button
                 size="icon"
                 variant="ghost"
                 className="size-7 rounded-lg"
                 onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                aria-label="Toggle theme"
+                aria-label={t.status.toggleTheme}
               >
                 {theme === "dark" ? (
                   <Sun className="size-4" />
@@ -165,17 +177,17 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
       </aside>
 
       {/* ---------------- Main column ---------------- */}
-      <div className="flex min-h-screen w-full flex-col lg:pl-60">
+      <div className="flex min-h-screen w-full flex-col lg:ps-60">
         {/* Topbar — desktop keeps the roomy bar; phones get ONE slim row */}
         <header className="sticky top-0 z-20 border-b border-border/70 bg-background/85 backdrop-blur-xl">
           {/* Desktop */}
           <div className="hidden items-center gap-3 px-6 py-3 lg:flex">
             <div className="min-w-0 flex-1">
               <h1 className="truncate text-[15px] font-semibold tracking-tight">
-                {NAV.find((n) => n.key === view)?.label}
+                {t.nav[NAV.find((n) => n.key === view)?.labelKey ?? "dashboard"]}
               </h1>
             </div>
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ms-auto flex items-center gap-2">
               {system.isLoading ? (
                 <Skeleton className="h-8 w-36 rounded-full" />
               ) : (
@@ -183,22 +195,21 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
                   <Pill
                     ok={online}
                     icon={<StatusDot ok={online} />}
-                    label={online ? "Server online" : "Server offline"}
+                    label={online ? t.status.serverOnline : t.status.serverOffline}
                   />
                   <Pill
                     ok={online}
                     icon={<Laptop className="size-3.5 text-muted-foreground" />}
-                    label={`${system.data?.devicesOnline ?? 0} device${
-                      (system.data?.devicesOnline ?? 0) === 1 ? "" : "s"
-                    }`}
+                    label={t.status.devices(system.data?.devicesOnline ?? 0)}
                   />
                   <Pill
                     ok={online}
                     icon={<HardDrive className="size-3.5 text-muted-foreground" />}
-                    label={`${system.data?.sharesCount ?? 0} shares`}
+                    label={t.status.shares(system.data?.sharesCount ?? 0)}
                   />
                 </div>
               )}
+              <LanguageMenu locale={locale} setLocale={setLocale} ariaLabel={t.settings.languageTitle} />
             </div>
           </div>
 
@@ -206,9 +217,10 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
               total instead of the old two-deck header) */}
           <div className="flex items-center gap-1 px-2 py-1.5 lg:hidden">
             <LogoMark className="size-7 shrink-0 rounded-lg" />
-            <nav className="flex min-w-0 flex-1 items-center justify-around" aria-label="Mobile">
+            <nav className="flex min-w-0 flex-1 items-center justify-around" aria-label={t.nav.mobile}>
               {NAV.slice(0, 6).map((item) => {
                 const active = view === item.key;
+                const label = t.nav[item.labelKey];
                 return (
                   <button
                     key={item.key}
@@ -218,12 +230,12 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
                       active ? "text-primary" : "text-muted-foreground hover:text-foreground"
                     )}
                     aria-current={active ? "page" : undefined}
-                    aria-label={item.label}
-                    title={item.label}
+                    aria-label={label}
+                    title={label}
                   >
                     <item.icon className="size-5" strokeWidth={active ? 2.2 : 1.8} />
                     {item.key === "transfers" && activeCount > 0 && (
-                      <span className="absolute right-0 top-0.5 flex min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[8px] font-bold leading-none text-primary-foreground">
+                      <span className="absolute end-0 top-0.5 flex min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[8px] font-bold leading-none text-primary-foreground">
                         {activeCount}
                       </span>
                     )}
@@ -241,16 +253,22 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
                   variant="ghost"
                   className="size-8 shrink-0 rounded-lg"
                   onClick={() => go("settings")}
-                  aria-label="Settings"
+                  aria-label={t.nav.settings}
                 >
                   <Settings className="size-4" />
                 </Button>
+                <LanguageMenu
+                  locale={locale}
+                  setLocale={setLocale}
+                  ariaLabel={t.settings.languageTitle}
+                  className="size-8 shrink-0 rounded-lg"
+                />
                 <Button
                   size="icon"
                   variant="ghost"
                   className="size-8 shrink-0 rounded-lg"
                   onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                  aria-label="Toggle theme"
+                  aria-label={t.status.toggleTheme}
                 >
                   {theme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
                 </Button>
@@ -283,5 +301,55 @@ function Pill({ ok, icon, label }: { ok: boolean; icon: React.ReactNode; label: 
       {icon}
       <span className="text-muted-foreground">{label}</span>
     </span>
+  );
+}
+
+/**
+ * Quick language switcher — renders every registered locale automatically,
+ * so future languages appear here without touching this component.
+ */
+function LanguageMenu({
+  locale,
+  setLocale,
+  ariaLabel,
+  className,
+}: {
+  locale: Locale;
+  setLocale: (l: Locale) => void;
+  ariaLabel: string;
+  className?: string;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="icon"
+          variant="ghost"
+          className={cn("size-8 rounded-lg", className)}
+          aria-label={ariaLabel}
+          title={ariaLabel}
+        >
+          <Languages className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-44 rounded-xl">
+        {LOCALE_LIST.map((l) => {
+          const meta = LOCALES[l];
+          return (
+            <DropdownMenuItem
+              key={l}
+              onClick={() => setLocale(l)}
+              className={cn(locale === l && "bg-accent/60")}
+            >
+              <span className="min-w-0 flex-1 truncate">
+                <span className="block text-sm font-semibold">{meta.nativeName}</span>
+                <span className="block text-[11px] text-muted-foreground">{meta.name}</span>
+              </span>
+              {locale === l && <Check className="size-4 shrink-0 text-primary" />}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

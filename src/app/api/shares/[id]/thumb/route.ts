@@ -48,13 +48,17 @@ export async function GET(req: Request, ctx: Ctx) {
     : mimeOf(resolved.abs).startsWith("video/")
       ? "video"
       : null;
-  if (!category) return jsonError(404, "no-thumb", "No thumbnail available for this file type.");
+  if (!category) return jsonError(404, "no-thumb", "No thumbnail available for this file type.", {
+      key: "noThumb",
+    });
 
   const result = await getThumbnail(resolved.abs, stat, size, category);
   if (!result.data) {
     // Generation failed (unsupported codec, missing ffmpeg, huge/corrupt
     // image…) — clients treat 404 as "render the type icon instead".
-    return jsonError(404, "thumb-failed", "Thumbnail could not be generated.");
+    return jsonError(404, "thumb-failed", "Thumbnail could not be generated.", {
+      key: "thumbFailed",
+    });
   }
 
   return new Response(new Uint8Array(result.data), {

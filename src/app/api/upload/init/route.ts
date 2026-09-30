@@ -19,7 +19,9 @@ interface Body {
 export async function POST(req: Request) {
   const body = await readJsonBody<Body>(req);
   if (!body?.shareId || !body.name)
-    return jsonError(400, "bad-body", "Upload needs a share and a file name.");
+    return jsonError(400, "bad-body", "Upload needs a share and a file name.", {
+      key: "badBody",
+    });
 
   const guard = await shareGuard(req, body.shareId, "write");
   if ("deny" in guard) return guard.deny;
@@ -47,8 +49,15 @@ export async function POST(req: Request) {
   } catch (e) {
     const msg = (e as Error).message;
     if (msg === "invalid-name")
-      return jsonError(400, "bad-name", "This file name cannot be used.");
-    if (msg === "invalid-dir") return jsonError(400, "bad-path", "Invalid destination folder.");
-    return jsonError(500, "init-failed", "The upload could not be started.");
+      return jsonError(400, "bad-name", "This file name cannot be used.", {
+        key: "badName",
+      });
+    if (msg === "invalid-dir")
+      return jsonError(400, "bad-path", "Invalid destination folder.", {
+        key: "badPath",
+      });
+    return jsonError(500, "init-failed", "The upload could not be started.", {
+        key: "startFailed",
+      });
   }
 }

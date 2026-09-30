@@ -6,6 +6,8 @@ import { EmptyState } from "../empty-state";
 import { StatusDot } from "../primitives";
 import { AddShareDialog } from "../add-share-dialog";
 import { formatBytes, formatSpeed, greeting, timeAgo } from "@/lib/localdock/client/format";
+import { useI18n } from "@/lib/localdock/i18n/provider";
+import { activityMessage } from "@/lib/localdock/i18n/activity";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +36,7 @@ import type { ActivityEntry } from "@/lib/localdock/types";
 import { useState } from "react";
 
 export function DashboardView() {
+  const { t } = useI18n();
   const system = useSystem();
   const shares = useShares();
   const activity = useActivity(14);
@@ -54,51 +57,48 @@ export function DashboardView() {
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs font-semibold">
               <StatusDot ok={online} />
-              {online ? "Your Local Cloud is Online" : "Reconnecting to your cloud…"}
+              {online ? t.dashboard.heroOnline : t.dashboard.heroReconnect}
             </span>
             <span className="hidden text-xs text-muted-foreground sm:inline">
-              · nothing leaves your network
+              {t.dashboard.heroPrivacy}
             </span>
           </div>
           <h1 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">
-            {greeting()} — everything is right where you left it.
+            {t.dashboard.greetingLine(greeting())}
           </h1>
           <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
-            Your computer is quietly serving {shares.data?.length ?? 0} shared{" "}
-            {(shares.data?.length ?? 0) === 1 ? "folder" : "folders"} to{" "}
-            {system.data?.devicesOnline ?? 0} device
-            {(system.data?.devicesOnline ?? 0) === 1 ? "" : "s"} on your network.
+            {t.dashboard.heroBody(shares.data?.length ?? 0, system.data?.devicesOnline ?? 0)}
           </p>
 
           <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Stat
               icon={<Laptop className="size-4" />}
-              label="Devices"
-              value={`${system.data?.devicesOnline ?? 0} online`}
-              sub={`${system.data?.devicesTrusted ?? 0} trusted`}
+              label={t.dashboard.statDevices}
+              value={t.dashboard.statOnline(system.data?.devicesOnline ?? 0)}
+              sub={t.dashboard.statTrusted(system.data?.devicesTrusted ?? 0)}
               loading={system.isLoading}
               onClick={() => go("devices")}
             />
             <Stat
               icon={<HardDrive className="size-4" />}
-              label="Shared"
+              label={t.dashboard.statShared}
               value={formatBytes(system.data?.sharedBytes ?? 0)}
-              sub={`${shares.data?.length ?? 0} shares`}
+              sub={t.dashboard.statShares(shares.data?.length ?? 0)}
               loading={system.isLoading}
               onClick={() => go("shares")}
             />
             <Stat
               icon={<ArrowUpRight className="size-4" />}
-              label="Transfer"
+              label={t.dashboard.statTransfer}
               value={formatSpeed(system.data?.transferSpeedBps ?? 0)}
-              sub="live network speed"
+              sub={t.dashboard.liveSpeed}
               loading={system.isLoading}
             />
             <Stat
               icon={<ShieldCheck className="size-4" />}
-              label="Security"
-              value="Local only"
-              sub="no cloud, no accounts"
+              label={t.dashboard.statSecurity}
+              value={t.dashboard.localOnly}
+              sub={t.dashboard.noCloud}
               loading={system.isLoading}
               onClick={() => go("settings")}
             />
@@ -107,11 +107,11 @@ export function DashboardView() {
       </section>
 
       {/* ---------- Shares ---------- */}
-      <section aria-label="Shares">
+      <section aria-label={t.dashboard.sharesAria}>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-bold tracking-tight">Shares</h2>
+          <h2 className="text-base font-bold tracking-tight">{t.dashboard.sharesTitle}</h2>
           <Button variant="ghost" size="sm" className="rounded-xl" onClick={() => go("shares")}>
-            All shares <ArrowRight className="size-4" />
+            {t.dashboard.allShares} <ArrowRight className="size-4 rtl:rotate-180" />
           </Button>
         </div>
 
@@ -124,9 +124,9 @@ export function DashboardView() {
         ) : topShares.length === 0 ? (
           <EmptyState
             icon={FolderHeart}
-            title="No shared folders yet"
-            description={"Your computer can become your personal local cloud.\nStart by adding a folder."}
-            actionLabel="Add Folder"
+            title={t.dashboard.emptyTitle}
+            description={t.dashboard.emptyDesc}
+            actionLabel={t.dashboard.addFolder}
             onAction={() => setAddOpen(true)}
           />
         ) : (
@@ -135,7 +135,7 @@ export function DashboardView() {
               <button
                 key={share.id}
                 onClick={() => openFiles(share.id, "")}
-                className={`card-lift rise rise-${Math.min(idx + 1, 4)} group rounded-2xl border border-border/70 bg-card p-4 text-left shadow-card`}
+                className={`card-lift rise rise-${Math.min(idx + 1, 4)} group rounded-2xl border border-border/70 bg-card p-4 text-start shadow-card`}
               >
                 <div className="flex items-center gap-3">
                   <span className="flex size-10 items-center justify-center rounded-xl bg-accent/70 text-accent-foreground transition-transform group-hover:scale-105">
@@ -144,16 +144,16 @@ export function DashboardView() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold">{share.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {formatBytes(share.sizeBytes)} · {share.access === "read" ? "Read only" : "Read & write"}
+                      {formatBytes(share.sizeBytes)} · {share.access === "read" ? t.dashboard.readOnly : t.dashboard.readWrite}
                     </p>
                   </div>
                 </div>
                 <div className="mt-3 flex items-center justify-between text-[11px] font-medium text-muted-foreground">
                   <span className="flex items-center gap-1.5">
                     <StatusDot ok pulse={false} className="bg-success" />
-                    Shared
+                    {t.dashboard.shared}
                   </span>
-                  <span>{share.guestEnabled ? "Guest link on" : "Devices only"}</span>
+                  <span>{share.guestEnabled ? t.dashboard.guestOn : t.dashboard.devicesOnly}</span>
                 </div>
               </button>
             ))}
@@ -164,24 +164,24 @@ export function DashboardView() {
       {/* ---------- Quick actions + Activity ---------- */}
       <section className="grid gap-6 lg:grid-cols-5">
         <div className="lg:col-span-2">
-          <h2 className="mb-3 text-base font-bold tracking-tight">Quick actions</h2>
+          <h2 className="mb-3 text-base font-bold tracking-tight">{t.dashboard.quickActions}</h2>
           <div className="grid gap-2.5">
             <QuickAction
               icon={FolderPlus}
-              title="Add a folder"
-              desc="Make any folder available to your devices"
+              title={t.dashboard.qaAdd}
+              desc={t.dashboard.qaAddDesc}
               onClick={() => setAddOpen(true)}
             />
             <QuickAction
               icon={LaptopMinimalCheck}
-              title="Pair a device"
-              desc="Scan a QR code with your phone"
+              title={t.dashboard.qaPair}
+              desc={t.dashboard.qaPairDesc}
               onClick={() => go("devices")}
             />
             <QuickAction
               icon={GlobeIcon}
-              title="Host a website"
-              desc="Serve an HTML folder on your network"
+              title={t.dashboard.qaSite}
+              desc={t.dashboard.qaSiteDesc}
               onClick={() => go("websites")}
             />
           </div>
@@ -189,9 +189,9 @@ export function DashboardView() {
 
         <div className="lg:col-span-3">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-bold tracking-tight">Recent activity</h2>
+            <h2 className="text-base font-bold tracking-tight">{t.dashboard.recentActivity}</h2>
             <Button variant="ghost" size="sm" className="rounded-xl" onClick={() => go("settings")}>
-              <Activity className="size-4" /> System
+              <Activity className="size-4" /> {t.dashboard.system}
             </Button>
           </div>
           <div className="rounded-2xl border border-border/70 bg-card shadow-card">
@@ -204,7 +204,7 @@ export function DashboardView() {
             ) : (activity.data ?? []).length === 0 ? (
               <div className="flex items-center gap-3 p-5 text-sm text-muted-foreground">
                 <Activity className="size-4" />
-                Activity on your cloud will appear here — uploads, new devices, hosted sites.
+                {t.dashboard.activityEmpty}
               </div>
             ) : (
               <ul className="divide-y divide-border/60">
@@ -241,7 +241,7 @@ function Stat({
   return (
     <Comp
       onClick={onClick}
-      className={`rounded-2xl border border-border/70 bg-background/60 p-3.5 text-left backdrop-blur transition-all ${
+      className={`rounded-2xl border border-border/70 bg-background/60 p-3.5 text-start backdrop-blur transition-all ${
         onClick ? "card-lift cursor-pointer" : ""
       }`}
     >
@@ -273,7 +273,7 @@ function QuickAction({
   return (
     <button
       onClick={onClick}
-      className="card-lift group flex items-center gap-3.5 rounded-2xl border border-border/70 bg-card p-3.5 text-left shadow-card"
+      className="card-lift group flex items-center gap-3.5 rounded-2xl border border-border/70 bg-card p-3.5 text-start shadow-card"
     >
       <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent/70 text-accent-foreground transition-transform group-hover:scale-105">
         <Icon className="size-5" strokeWidth={1.8} />
@@ -282,7 +282,7 @@ function QuickAction({
         <span className="block text-sm font-semibold">{title}</span>
         <span className="block truncate text-xs text-muted-foreground">{desc}</span>
       </span>
-      <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+      <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5" />
     </button>
   );
 }
@@ -307,6 +307,7 @@ const ACTIVITY_ICONS: Record<string, { icon: typeof Activity; tone: string }> = 
 };
 
 function ActivityRow({ entry }: { entry: ActivityEntry }) {
+  const { t } = useI18n();
   const conf = ACTIVITY_ICONS[entry.type] ?? ACTIVITY_ICONS["file.uploaded"];
   const Icon = conf.icon;
   return (
@@ -314,7 +315,7 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
       <span className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${conf.tone}`}>
         <Icon className="size-4" strokeWidth={1.8} />
       </span>
-      <p className="min-w-0 flex-1 truncate text-sm">{entry.message}</p>
+      <p className="min-w-0 flex-1 truncate text-sm">{activityMessage(entry, t.activity)}</p>
       <span className="shrink-0 text-[11px] text-muted-foreground">{timeAgo(entry.at)}</span>
     </li>
   );

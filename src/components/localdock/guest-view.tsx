@@ -12,12 +12,14 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Lock, Wifi, ArrowLeft, Search, X, Upload, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useI18n } from "@/lib/localdock/i18n";
 
 /**
  * Guest / paired-device share view — opened from share links (?s=slug) or QRs.
  * Respects the share's access level; private shares show a friendly notice.
  */
 export function GuestView({ slug }: { slug: string }) {
+  const { t } = useI18n();
   const [state, setState] = useState<
     { kind: "loading" } | { kind: "denied"; message: string } | {
       kind: "ready";
@@ -34,7 +36,7 @@ export function GuestView({ slug }: { slug: string }) {
         const res = await fetch(`/api/guest/${encodeURIComponent(slug)}`, { headers });
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-          setState({ kind: "denied", message: body?.error?.message ?? "This link is not available." });
+          setState({ kind: "denied", message: body?.error?.message ?? t.guest.unavailable });
           return;
         }
         const body = (await res.json()) as {
@@ -51,7 +53,7 @@ export function GuestView({ slug }: { slug: string }) {
     return (
       <Centered>
         <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">Opening shared folder…</p>
+        <p className="text-sm text-muted-foreground">{t.guest.opening}</p>
       </Centered>
     );
   }
@@ -63,13 +65,13 @@ export function GuestView({ slug }: { slug: string }) {
         <span className="mt-4 flex size-12 items-center justify-center rounded-2xl bg-warning/15 text-warning-foreground">
           <Lock className="size-6" />
         </span>
-        <h1 className="mt-4 text-xl font-bold tracking-tight">This folder is private</h1>
+        <h1 className="mt-4 text-xl font-bold tracking-tight">{t.guest.privateTitle}</h1>
         <p className="mt-2 max-w-sm text-center text-sm leading-relaxed text-muted-foreground">
           {state.message}
         </p>
         <p className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground">
           <StatusDot ok pulse={false} className="bg-primary" />
-          Ask the owner to pair your device or enable guest access.
+          {t.guest.privateDesc}
         </p>
       </Centered>
     );
@@ -93,6 +95,7 @@ function GuestShareInner({
   shareName: string;
   access: string;
 }) {
+  const { t } = useI18n();
   const writable = access === "readwrite";
   return (
     <div className="min-h-screen bg-background">
@@ -103,7 +106,7 @@ function GuestShareInner({
             <p className="truncate text-[15px] font-bold tracking-tight">{shareName}</p>
             <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
               <StatusDot ok pulse={false} className="bg-success" />
-              Shared from a computer on this network · {writable ? "Read & write" : "Read only"}
+              {t.guest.sharedFrom} {writable ? t.guest.readWrite : t.guest.readOnly}
             </p>
           </div>
         </div>
@@ -153,6 +156,7 @@ export function PairClaimView({
   >({ kind: "loading" });
   const [deviceName, setDeviceName] = useState("");
   const [pairing, setPairing] = useState(false);
+  const { t } = useI18n();
 
   const platformGuess = /android/i.test(navigator.userAgent)
     ? "android"
@@ -168,31 +172,31 @@ export function PairClaimView({
       // Instead show the pairing screen directly with the code prefilled.
       setState({
         kind: "found",
-        serverName: "your computer",
+        serverName: t.pairClaim.yourComputer,
         baseUrl: buildLanUrl("/"),
       });
     } catch {
-      setState({ kind: "invalid", message: "This pairing link is incomplete." });
+      setState({ kind: "invalid", message: t.pairClaim.incomplete });
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void preview();
     setDeviceName(
       platformGuess === "android"
-        ? "My Android"
+        ? t.pairClaim.defaultAndroid
         : platformGuess === "ios"
-          ? "My iPhone"
-          : "My browser"
+          ? t.pairClaim.defaultIphone
+          : t.pairClaim.defaultBrowser
     );
-  }, [code]);
+  }, [code, t]);
 
   const pair = async () => {
     setPairing(true);
     try {
       const res = await Api.pairClaim({
         code,
-        deviceName: deviceName.trim() || "My device",
+        deviceName: deviceName.trim() || t.pairClaim.defaultDevice,
         platform: platformGuess,
       });
       const { saveDeviceToken } = await import("@/lib/localdock/client/api");
@@ -214,13 +218,13 @@ export function PairClaimView({
         {state.kind === "loading" && (
           <div className="mt-6">
             <Loader2 className="mx-auto size-5 animate-spin text-muted-foreground" />
-            <p className="mt-2 text-sm text-muted-foreground">Reading pairing code…</p>
+            <p className="mt-2 text-sm text-muted-foreground">{t.pairClaim.reading}</p>
           </div>
         )}
 
         {state.kind === "found" && (
           <>
-            <h1 className="mt-5 text-xl font-bold tracking-tight">Pair with this computer?</h1>
+            <h1 className="mt-5 text-xl font-bold tracking-tight">{t.pairClaim.title}</h1>
             <div className="mt-4 rounded-2xl border border-border bg-muted/40 p-4">
               <p className="flex items-center justify-center gap-2 text-sm font-semibold">
                 <Wifi className="size-4 text-success" />
@@ -230,9 +234,9 @@ export function PairClaimView({
                 {code}
               </code>
             </div>
-            <label className="mt-4 block text-left">
+            <label className="mt-4 block text-start">
               <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">
-                Device name
+                {t.pairClaim.deviceName}
               </span>
               <input
                 value={deviceName}
@@ -247,13 +251,13 @@ export function PairClaimView({
               disabled={pairing || !deviceName.trim()}
             >
               {pairing ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-              Trust this device
+              {t.pairClaim.trust}
             </Button>
             <button
               onClick={onExit}
               className="mt-3 text-xs text-muted-foreground hover:text-foreground"
             >
-              Cancel
+              {t.common.cancel}
             </button>
           </>
         )}
@@ -263,9 +267,9 @@ export function PairClaimView({
             <span className="mx-auto mt-5 flex size-12 items-center justify-center rounded-2xl bg-success/15 text-success">
               <Check className="size-6" strokeWidth={2.5} />
             </span>
-            <h1 className="mt-4 text-xl font-bold tracking-tight">Trusted device</h1>
+            <h1 className="mt-4 text-xl font-bold tracking-tight">{t.pairClaim.trustedTitle}</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              This browser is now paired with “{state.serverName}”.
+              {t.pairClaim.trustedBody(state.serverName)}
             </p>
           </>
         )}
@@ -275,10 +279,10 @@ export function PairClaimView({
             <span className="mx-auto mt-5 flex size-12 items-center justify-center rounded-2xl bg-destructive/10 text-destructive">
               <X className="size-6" strokeWidth={2.5} />
             </span>
-            <h1 className="mt-4 text-xl font-bold tracking-tight">Pairing failed</h1>
+            <h1 className="mt-4 text-xl font-bold tracking-tight">{t.pairClaim.failedTitle}</h1>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{state.message}</p>
             <Button variant="outline" className="mt-5 w-full rounded-2xl" onClick={onExit}>
-              Go back
+              {t.pairClaim.goBack}
             </Button>
           </>
         )}

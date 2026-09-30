@@ -17,6 +17,10 @@
 import { create } from "zustand";
 import type { TransferItem, TransferStatus } from "../types";
 import { Api, getOwnerKey, getDeviceToken, makeApiError } from "./api";
+import { activeDictionary } from "../i18n/runtime";
+
+/** Localized transfer-error strings (read at error-creation time). */
+const te = () => activeDictionary().transferErrors;
 
 const CHUNK_SIZE = 4 * 1024 * 1024;
 const MAX_PARALLEL = 2;
@@ -365,11 +369,11 @@ class TransferEngine {
   /** Re-attach a picked file to an interrupted (restored) upload, then resume. */
   reattachUpload(id: string, file: File): { ok: boolean; reason?: string } {
     const item = this.items.find((i) => i.id === id);
-    if (!item || item.kind !== "upload") return { ok: false, reason: "Transfer not found." };
+    if (!item || item.kind !== "upload") return { ok: false, reason: te().notFound };
     if (file.name !== item.name || file.size !== item.size) {
       return {
         ok: false,
-        reason: "That's a different file — pick the same file to resume this transfer.",
+        reason: te().wrongFile,
       };
     }
     useTransfers.getState().patch(id, { file, status: "queued", needsFile: false, error: undefined });
@@ -525,7 +529,7 @@ class TransferEngine {
       err.code === "network" || err.code === "http-0" || !err.code;
     if (networkish) {
       state.setConnected(false);
-      state.patch(id, { status: "paused", error: "Connection lost — waiting for the network…" });
+      state.patch(id, { status: "paused", error: te().connectionLost });
       this.persist();
       setTimeout(() => {
         const cur = this.items.find((i) => i.id === id);
@@ -535,7 +539,7 @@ class TransferEngine {
     }
     state.patch(id, {
       status: "failed",
-      error: err.friendly || err.message || "The transfer failed.",
+      error: err.friendly || err.message || te().generic,
     });
     if (item.kind === "download") this.reportActivity(item, "failed", true);
     this.persist();
@@ -603,7 +607,7 @@ class TransferEngine {
       if (!this.stillActive(item.id)) return;
       pass++;
       if (pass > item.totalChunks + 6) {
-        throw makeApiError(0, "stalled", "The upload stalled and could not finish.");
+        throw makeApiError(0, "stalled", te().uploadStalled);
       }
       const missing: number[] = [];
       for (let i = 0; i < item.totalChunks; i++) {
@@ -643,7 +647,7 @@ class TransferEngine {
                 throw makeApiError(
                   res.status,
                   body?.error?.code ?? `http-${res.status}`,
-                  body?.error?.message ?? "A chunk failed to upload."
+                  body?.error?.message ?? te().chunkFailed
                 );
               }
               received.add(index);
@@ -811,7 +815,7 @@ class TransferEngine {
               throw makeApiError(
                 res.status,
                 `http-${res.status}`,
-                body?.error?.message ?? "Download failed."
+                body?.error?.message ?? te().downloadFailed
               );
             }
             const reader = res.body!.getReader();
@@ -829,7 +833,7 @@ class TransferEngine {
               0
             );
             if (got !== expected) {
-              throw makeApiError(0, "network", "Connection dropped mid-segment — retrying.");
+              throw makeApiError(0, "network", te().segmentDropped);
             }
             await onSegment(index, parts);
           });
@@ -857,7 +861,7 @@ class TransferEngine {
           showSaveFilePicker: (opts: unknown) => Promise<FileSystemFileHandle>;
         }).showSaveFilePicker({
           suggestedName: item.name,
-          types: [{ description: "File", accept: { "*/*": [`.${this.extOf(item.name) || "bin"}`] } }],
+          types: [{ description: te().fileKind, accept: { "*/*": [`.${this.extOf(item.name) || "bin"}`] } }],
         });
         await idb.put(item.id, handle);
       }
@@ -980,7 +984,7 @@ class TransferEngine {
         }
         if (writeError) throw writeError;
         if (!this.stillActive(item.id)) {
-          throw makeApiError(0, "aborted", "Transfer stopped.");
+          throw makeApiError(0, "aborted", te().stopped);
         }
       },
     });
@@ -1000,7 +1004,7 @@ class TransferEngine {
     }
     if (writeError) throw writeError;
     if (nextToWrite < count) {
-      throw makeApiError(0, "network", "Download interrupted — retrying.");
+      throw makeApiError(0, "network", te().downloadInterrupted);
     }
 
     await writer.writable.close();
@@ -1083,7 +1087,7 @@ class TransferEngine {
     for (let i = 0; i < count; i++) {
       const part = segs.get(i);
       if (!part) {
-        throw makeApiError(0, "internal", "Download segments are incomplete.");
+        throw makeApiError(0, "internal", te().segmentsIncomplete);
       }
       ordered.push(part);
     }
@@ -1209,7 +1213,7 @@ class TransferEngine {
           status: "paused",
           speedBps: 0,
           etaSec: null,
-          error: "Reconnect: pick the same file again to resume.",
+          error: te().reconnectHint,
           file: undefined,
           controller: undefined,
         } as unknown as TransferItem);

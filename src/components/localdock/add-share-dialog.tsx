@@ -38,6 +38,7 @@ import {
 import { toast } from "sonner";
 import { QrDialog } from "./qr-dialog";
 import { buildLanUrl } from "@/lib/localdock/client/lan";
+import { useI18n } from "@/lib/localdock/i18n";
 import type { Share } from "@/lib/localdock/types";
 
 interface ShortcutItem {
@@ -58,6 +59,7 @@ export function AddShareDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
+  const { t } = useI18n();
   const [step, setStep] = useState<"pick" | "configure" | "done">("pick");
   const [pickedAbs, setPickedAbs] = useState<string>("");
   const [manualPath, setManualPath] = useState("");
@@ -107,7 +109,7 @@ export function AddShareDialog({
 
   const nameFromPath = (p: string) => {
     const clean = p.replace(/[\\/]+$/, "");
-    return clean.split(/[\\/]/).filter(Boolean).pop() ?? "Shared folder";
+    return clean.split(/[\\/]/).filter(Boolean).pop() ?? t.addShare.nameFallback;
   };
 
   const choosePath = (absPath: string) => {
@@ -121,14 +123,14 @@ export function AddShareDialog({
   const pickNative = async () => {
     setPicking(true);
     try {
-      const abs = await pickNativeFolder("Choose a folder to share");
+      const abs = await pickNativeFolder(t.addShare.pickerTitle);
       if (abs) {
         choosePath(abs);
       } else if (!desktop) {
         setBrowserOpen(true);
       }
     } catch (e) {
-      toast.error("Could not open native folder picker: " + (e as Error).message);
+      toast.error(t.addShare.pickerFailToast + (e as Error).message);
     } finally {
       setPicking(false);
     }
@@ -141,10 +143,10 @@ export function AddShareDialog({
       const pick = await pickDeviceFolder();
       if (pick && pick.entries.length > 0) {
         setDevicePick(pick);
-        setName(pick.rootName || "Shared folder");
+        setName(pick.rootName || t.addShare.nameFallback);
         setStep("configure");
       } else if (pick) {
-        toast.error("That folder has no usable files.");
+        toast.error(t.addShare.emptyFolderToast);
       }
     } finally {
       setPickingDevice(false);
@@ -181,18 +183,18 @@ export function AddShareDialog({
         refresh.refreshSystem();
         toast.success(
           devicePick.entries.length === 1
-            ? "Uploading 1 file from this device…"
-            : `Uploading ${devicePick.entries.length} files from this device…`
+            ? t.addShare.uploadingOneToast
+            : t.addShare.uploadingNToast(devicePick.entries.length)
         );
         return;
       }
 
       if (!pickedAbs) {
-        toast.error("Please choose a folder to share.");
+        toast.error(t.addShare.needFolderToast);
         return;
       }
       const res = await Api.createShare({
-        name: name.trim() || nameFromPath(pickedAbs) || "Shared folder",
+        name: name.trim() || nameFromPath(pickedAbs) || t.addShare.nameFallback,
         absPath: pickedAbs,
         access,
         guestEnabled: guest,
@@ -216,11 +218,9 @@ export function AddShareDialog({
           {step === "pick" && (
             <>
               <DialogHeader>
-                <DialogTitle>Add Folder to Share</DialogTitle>
+                <DialogTitle>{t.addShare.title}</DialogTitle>
                 <DialogDescription>
-                  {host
-                    ? "Choose any folder on this computer to share with your devices on the local network."
-                    : "You're on a companion device — pick a folder from THIS device. It uploads to the computer over your network, then becomes shared."}
+                  {host ? t.addShare.hostDesc : t.addShare.companionDesc}
                 </DialogDescription>
               </DialogHeader>
 
@@ -229,8 +229,8 @@ export function AddShareDialog({
                   <>
                     {/* Native Picker Card */}
                     <NativePickCard
-                      title="Select folder on this computer"
-                      sub="Opens File Explorer to pick any folder on your PC"
+                      title={t.addShare.nativePickTitle}
+                      sub={t.addShare.nativePickSub}
                       busy={picking}
                       onClick={() => void pickNative()}
                     />
@@ -238,14 +238,15 @@ export function AddShareDialog({
                     {/* Direct Path Input */}
                     <div className="space-y-2 rounded-2xl border border-border bg-muted/30 p-3.5">
                       <Label htmlFor="manual-folder-path" className="text-xs font-semibold text-foreground">
-                        Or enter path directly:
+                        {t.addShare.orPath}
                       </Label>
                       <div className="flex gap-2">
                         <Input
                           id="manual-folder-path"
                           value={manualPath}
                           onChange={(e) => setManualPath(e.target.value)}
-                          placeholder="e.g. D:\Downloads or C:\Users\..."
+                          placeholder={t.addShare.pathPlaceholder}
+                          dir="ltr"
                           className="rounded-xl font-mono text-xs"
                           onKeyDown={(e) => e.key === "Enter" && choosePath(manualPath)}
                         />
@@ -255,7 +256,7 @@ export function AddShareDialog({
                           disabled={!manualPath.trim()}
                           onClick={() => choosePath(manualPath)}
                         >
-                          Continue
+                          {t.common.continue}
                         </Button>
                       </div>
 
@@ -264,7 +265,7 @@ export function AddShareDialog({
                         <div className="pt-1.5">
                           <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
                             <Sparkles className="size-3 text-primary" />
-                            Quick access:
+                            {t.addShare.quickAccess}
                           </p>
                           <div className="flex flex-wrap gap-1.5">
                             {shortcuts.slice(0, 6).map((q) => (
@@ -294,22 +295,20 @@ export function AddShareDialog({
                       onClick={() => setBrowserOpen(true)}
                     >
                       <FolderSearch className="size-4 text-muted-foreground" />
-                      Browse drives & folders on computer…
+                      {t.addShare.browse}
                     </Button>
                   </>
                 ) : (
                   <>
                     {/* Device folder picker (companion flow) */}
                     <NativePickCard
-                      title="Select folder from this device"
-                      sub="Opens this device's folder picker — content uploads to the computer"
+                      title={t.addShare.devicePickTitle}
+                      sub={t.addShare.devicePickSub}
                       busy={pickingDevice}
                       onClick={() => void pickFromDevice()}
                     />
                     <p className="rounded-xl bg-primary/10 px-3 py-2 text-xs leading-relaxed text-primary">
-                      Folders that already live on the computer can only be shared from the
-                      computer itself. Anything you pick here is uploaded safely over your local
-                      network — no internet involved.
+                      {t.addShare.deviceNote}
                     </p>
                   </>
                 )}
@@ -320,28 +319,27 @@ export function AddShareDialog({
           {step === "configure" && (
             <>
               <DialogHeader>
-                <DialogTitle>Share “{name || "folder"}”</DialogTitle>
+                <DialogTitle>{t.addShare.configureTitle(name || t.addShare.nameFallback)}</DialogTitle>
                 <DialogDescription>
-                  Configure access settings for devices on your network.
+                  {t.addShare.configureDesc}
                 </DialogDescription>
               </DialogHeader>
 
               <div className="space-y-5">
                 <div className="space-y-2">
                   <Label htmlFor="share-name" className="text-xs font-semibold">
-                    {devicePick ? "Folder name & source" : "Folder name & real path"}
+                    {devicePick ? t.addShare.nameSource : t.addShare.nameSourcePath}
                   </Label>
                   {devicePick ? (
                     <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2.5">
                       <FolderOpen className="size-4 shrink-0 text-primary" />
                       <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
-                        {devicePick.entries.length} file{devicePick.entries.length === 1 ? "" : "s"} ·{" "}
-                        {formatBytes(deviceBytes)} — uploads from this device
+                        {t.addShare.nFilesUploading(devicePick.entries.length, formatBytes(deviceBytes))}
                       </span>
                       <button
                         className="text-muted-foreground transition-colors hover:text-foreground"
                         onClick={() => setStep("pick")}
-                        aria-label="Change folder"
+                        aria-label={t.addShare.changeFolderAria}
                       >
                         <Pencil className="size-4" />
                       </button>
@@ -349,13 +347,13 @@ export function AddShareDialog({
                   ) : (
                     <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2.5">
                       <FolderOpen className="size-4 shrink-0 text-primary" />
-                      <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground font-medium">
+                      <span dir="ltr" className="min-w-0 flex-1 truncate font-mono text-xs text-foreground font-medium">
                         {pickedAbs}
                       </span>
                       <button
                         className="text-muted-foreground transition-colors hover:text-foreground"
                         onClick={() => setStep("pick")}
-                        aria-label="Change folder"
+                        aria-label={t.addShare.changeFolderAria}
                       >
                         <Pencil className="size-4" />
                       </button>
@@ -365,14 +363,14 @@ export function AddShareDialog({
                     id="share-name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Folder name"
+                    placeholder={t.addShare.namePlaceholder}
                     className="rounded-xl"
                     autoFocus
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-xs font-semibold">Access</Label>
+                  <Label className="text-xs font-semibold">{t.addShare.accessLabel}</Label>
                   <RadioGroup value={access} onValueChange={(v) => setAccess(v as "read" | "readwrite")}>
                     <label
                       htmlFor="acc-rw"
@@ -382,9 +380,9 @@ export function AddShareDialog({
                     >
                       <RadioGroupItem value="readwrite" id="acc-rw" className="mt-0.5" />
                       <div>
-                        <p className="text-sm font-semibold">Read & Write</p>
+                        <p className="text-sm font-semibold">{t.addShare.readWriteTitle}</p>
                         <p className="text-xs text-muted-foreground">
-                          Devices can browse, download, upload, and organize files in this folder.
+                          {t.addShare.readWriteDesc}
                         </p>
                       </div>
                     </label>
@@ -396,9 +394,9 @@ export function AddShareDialog({
                     >
                       <RadioGroupItem value="read" id="acc-ro" className="mt-0.5" />
                       <div>
-                        <p className="text-sm font-semibold">Read Only</p>
+                        <p className="text-sm font-semibold">{t.addShare.readOnlyTitle}</p>
                         <p className="text-xs text-muted-foreground">
-                          Devices can browse and download — no modifications permitted.
+                          {t.addShare.readOnlyDesc}
                         </p>
                       </div>
                     </label>
@@ -406,10 +404,10 @@ export function AddShareDialog({
                 </div>
 
                 <label className="flex items-center justify-between rounded-2xl border border-border p-3.5">
-                  <div className="pr-3">
-                    <p className="text-sm font-semibold">Guest browser access</p>
+                  <div className="ps-3">
+                    <p className="text-sm font-semibold">{t.addShare.guestTitle}</p>
                     <p className="text-xs text-muted-foreground">
-                      Anyone on this network can open the share link — no pairing needed.
+                      {t.addShare.guestDesc}
                     </p>
                   </div>
                   <Switch checked={guest} onCheckedChange={setGuest} />
@@ -418,11 +416,11 @@ export function AddShareDialog({
 
               <DialogFooter>
                 <Button variant="outline" onClick={() => setStep("pick")}>
-                  Back
+                  {t.common.back}
                 </Button>
                 <Button onClick={create} disabled={creating || !name.trim()}>
                   {creating ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-                  Share Folder
+                  {t.addShare.shareFolder}
                 </Button>
               </DialogFooter>
             </>
@@ -435,22 +433,22 @@ export function AddShareDialog({
                   <span className="flex size-6 items-center justify-center rounded-full bg-success/15 text-success">
                     <Check className="size-4" strokeWidth={3} />
                   </span>
-                  Shared successfully
+                  {t.addShare.successToast}
                 </DialogTitle>
                 <DialogDescription>
                   {devicePick
-                    ? `“${created.name}” is shared — its content (${devicePick.entries.length} files) is uploading from this device. Track progress in the Transfer Dock.`
-                    : `“${created.name}” is now shared and accessible on your network.`}
+                    ? t.addShare.successUploading(created.name, devicePick.entries.length)
+                    : t.addShare.successPlain(created.name)}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-3 rounded-2xl border border-border bg-muted/40 p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold">{created.name}</span>
                   <span className="flex items-center gap-1.5 text-xs font-medium text-success">
-                    ● Available
+                    ● {t.addShare.available}
                   </span>
                 </div>
-                <code className="block truncate rounded-lg bg-background px-3 py-2 text-xs font-mono text-muted-foreground">
+                <code dir="ltr" className="block truncate rounded-lg bg-background px-3 py-2 text-xs font-mono text-muted-foreground">
                   {created.rootPath}
                 </code>
               </div>
@@ -461,9 +459,9 @@ export function AddShareDialog({
                     onOpenChange(false);
                   }}
                 >
-                  Done
+                  {t.common.done}
                 </Button>
-                <Button onClick={() => setQrOpen(true)}>Show QR & Link</Button>
+                <Button onClick={() => setQrOpen(true)}>{t.addShare.showQrLink}</Button>
               </DialogFooter>
             </>
           )}
@@ -475,9 +473,9 @@ export function AddShareDialog({
         open={browserOpen}
         onOpenChange={setBrowserOpen}
         mode="shares"
-        title="Select Folder on Computer"
-        description="Navigate your computer's drives and folders to choose what to share."
-        confirmLabel="Choose this folder"
+        title={t.addShare.browserTitle}
+        description={t.addShare.browserDesc}
+        confirmLabel={t.addShare.browserConfirm}
         onSelect={(absPath) => {
           setBrowserOpen(false);
           choosePath(absPath);
@@ -488,8 +486,8 @@ export function AddShareDialog({
         <QrDialog
           open={qrOpen}
           onOpenChange={setQrOpen}
-          title={`Share "${created.name}"`}
-          description="Scan with any device on this network — or send the link."
+          title={t.addShare.qrTitle(created.name)}
+          description={t.addShare.qrHint}
           qrUrl={`/api/qr?text=${encodeURIComponent(buildLanUrl(`/?s=${created.slug}`))}`}
           link={buildLanUrl(`/?s=${created.slug}`)}
         />
