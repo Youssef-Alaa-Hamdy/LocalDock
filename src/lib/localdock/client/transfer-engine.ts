@@ -22,6 +22,21 @@ const CHUNK_SIZE = 4 * 1024 * 1024;
 const MAX_PARALLEL = 2;
 const MAX_AUTO_RETRIES = 4;
 const PERSIST_KEY = "localdock.transfers.v2";
+/** Parallel chunk PUTs per upload (keeps the pipe full on Wi-Fi). */
+const UPLOAD_PARALLEL = 3;
+/** IDM-style parallel range connections per download. */
+const DL_MAX_CONNECTIONS = 4;
+
+/**
+ * Minimal structural type for FileSystemWritableFileStream — avoids lib.dom
+ * variance issues while keeping full type safety at the call sites.
+ */
+interface WritableLike {
+  write(data: Blob | BufferSource | string): Promise<void>;
+  seek(position: number): Promise<void>;
+  close(): Promise<void>;
+  abort?(reason?: unknown): Promise<void>;
+}
 
 interface PersistedTransfer {
   id: string;
@@ -111,6 +126,50 @@ class Speedometer {
 }
 
 /* ------------------------------------------------------------------ */
+/* Parallel download planning (IDM-style segmented engine)             */
+/* ------------------------------------------------------------------ */
+
+interface DlPlan {
+  segSize: number;
+  count: number;
+  workers: number;
+}
+
+/**
+ * Split the remaining byte range into segments for parallel downloading.
+ * Several connections keep the TCP pipeline full — a single Wi-Fi stream
+ * often stalls, which is exactly the "slow & choppy" effect.
+ */
+function planDownload(total: number, from: number): DlPlan {
+  const remaining = Math.max(0, total - from);
+  if (remaining <= 8 * 1024 * 1024) {
+    return { segSize: Math.max(1, remaining), count: 1, workers: 1 };
+  }
+  const connections =
+    remaining >= 64 * 1024 * 1024 ? DL_MAX_CONNECTIONS : remaining >= 16 * 1024 * 1024 ? 3 : 2;
+  // ~6 segments per connection so fast workers never starve; bounded size.
+  let segSize = Math.ceil(remaining / (connections * 6));
+  segSize = Math.min(Math.max(segSize, 2 * 1024 * 1024), 16 * 1024 * 1024);
+  const count = Math.ceil(remaining / segSize);
+  return { segSize, count, workers: Math.min(connections, count) };
+}
+
+function downloadUrlOf(item: TransferItem): string {
+  return `/api/shares/${item.shareId}/download?path=${encodeURIComponent(item.path)}`;
+}
+
+function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+/* ------------------------------------------------------------------ */
 /* IndexedDB handle storage (cross-reload download resume)             */
 /* ------------------------------------------------------------------ */
 
@@ -171,6 +230,17 @@ class TransferEngine {
     (info: { shareId: string; dirPath: string; name: string }) => void
   >();
 
+  /* Download runtime state — session-scoped, never persisted:
+   *  - dlSegments: finished in-memory segments (blob path, survives pause/retry)
+   *  - dlPlans: the segment plan a pause/resume must stick to
+   *  - dlWriters: the ONE open disk writer per active streaming download
+   *  - dlWriting: whether the ordered flusher is mid-write (settle signal)
+   */
+  private dlSegments = new Map<string, Map<number, Blob>>();
+  private dlPlans = new Map<string, DlPlan & { base: number }>();
+  private dlWriters = new Map<string, { writable: WritableLike; writePos: number }>();
+  private dlWriting = new Map<string, boolean>();
+
   /**
    * Subscribe to upload completions — used by the file browser to refresh the
    * open folder the moment a file lands on disk (no manual re-entry needed).
@@ -201,11 +271,17 @@ class TransferEngine {
    * the actual transfer.
    */
   private reportActivity(
-    item: TransferItem,
+    itemOrId: TransferItem | string,
     status: "active" | "done" | "failed" | "canceled" = "active",
     force = false
   ) {
     if (typeof window === "undefined") return;
+    const id = typeof itemOrId === "string" ? itemOrId : itemOrId.id;
+    // Read the FRESH item from the store — the closure reference goes stale
+    // after the first patch(), which used to report outdated progress to
+    // the other devices.
+    const item = this.items.find((i) => i.id === id);
+    if (!item) return;
     const now = Date.now();
     if (!force) {
       const last = this.lastActivityReport.get(item.id) ?? 0;
@@ -227,9 +303,25 @@ class TransferEngine {
     this.booted = true;
     void this.restore();
     window.addEventListener("online", () => this.retryInterrupted());
+    window.addEventListener("pagehide", () => this.commitWriters());
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") this.retryInterrupted();
     });
+  }
+
+  /**
+   * Commit open download writers (swap file → real file) so a reload
+   * resumes from real disk state instead of re-downloading the whole run.
+   */
+  private commitWriters() {
+    for (const [id, w] of this.dlWriters) {
+      this.dlWriters.delete(id);
+      try {
+        void w.writable.close().catch(() => undefined);
+      } catch {
+        /* page is going away */
+      }
+    }
   }
 
   get items() {
@@ -355,6 +447,19 @@ class TransferEngine {
       await Api.uploadCancel(item.uploadId).catch(() => undefined);
     }
     if (item.kind === "download") {
+      const writer = this.dlWriters.get(id);
+      if (writer) {
+        this.dlWriters.delete(id);
+        try {
+          // abort() discards the swap file — nothing partial is committed
+          if (writer.writable.abort) await writer.writable.abort();
+          else await writer.writable.close();
+        } catch {
+          /* already closed */
+        }
+      }
+      this.dlSegments.delete(id);
+      this.dlPlans.delete(id);
       await idb.del(id);
       this.reportActivity(item, "canceled", true); // vanish instantly elsewhere
     }
@@ -491,6 +596,8 @@ class TransferEngine {
 
     const speedo = this.speedo(item.id);
 
+    // Parallel chunk pipeline: N workers pull from the missing-chunks queue.
+    // Same philosophy as the parallel download engine — keep the pipe full.
     let pass = 0;
     for (;;) {
       if (!this.stillActive(item.id)) return;
@@ -498,52 +605,68 @@ class TransferEngine {
       if (pass > item.totalChunks + 6) {
         throw makeApiError(0, "stalled", "The upload stalled and could not finish.");
       }
-      // find next missing chunk
-      let index = -1;
+      const missing: number[] = [];
       for (let i = 0; i < item.totalChunks; i++) {
-        if (!received.has(i)) {
-          index = i;
-          break;
-        }
+        if (!received.has(i)) missing.push(i);
       }
-      if (index === -1) break; // all chunks received
+      if (missing.length === 0) break;
 
-      const start = index * item.chunkSize;
-      const end = Math.min(file.size, start + item.chunkSize);
-      const blob = file.slice(start, end);
+      let cursor = 0;
+      let workers = 0;
+      const runWorker = async (): Promise<void> => {
+        workers++;
+        useTransfers.getState().patch(item.id, { connections: Math.max(1, workers) });
+        try {
+          for (;;) {
+            if (!this.stillActive(item.id)) return;
+            const my = cursor++;
+            if (my >= missing.length) return;
+            const index = missing[my];
+            const start = index * item.chunkSize;
+            const end = Math.min(file.size, start + item.chunkSize);
+            const blob = file.slice(start, end);
 
-      await this.withRetry(item, async () => {
-        const res = await fetch(
-          `/api/upload/chunk?uploadId=${encodeURIComponent(uploadId!)}&index=${index}`,
-          {
-            method: "PUT",
-            body: blob,
-            headers: transferHeaders({ "Content-Type": "application/octet-stream" }),
-            signal: item.controller?.signal,
+            await this.withRetry(item, async () => {
+              const res = await fetch(
+                `/api/upload/chunk?uploadId=${encodeURIComponent(uploadId!)}&index=${index}`,
+                {
+                  method: "PUT",
+                  body: blob,
+                  headers: transferHeaders({ "Content-Type": "application/octet-stream" }),
+                  signal: item.controller?.signal,
+                }
+              );
+              if (!res.ok) {
+                const body = (await res.json().catch(() => null)) as
+                  | { error?: { code?: string; message?: string } }
+                  | null;
+                throw makeApiError(
+                  res.status,
+                  body?.error?.code ?? `http-${res.status}`,
+                  body?.error?.message ?? "A chunk failed to upload."
+                );
+              }
+              received.add(index);
+              speedo.push(blob.size);
+              const transferred = bytesOf(received);
+              const bps = speedo.bps;
+              useTransfers.getState().patch(item.id, {
+                transferred: Math.min(transferred, item.size),
+                speedBps: bps,
+                etaSec: bps > 0 ? (item.size - transferred) / bps : null,
+                receivedChunks: new Set(received),
+              });
+            });
+            this.persistThrottled();
           }
-        );
-        if (!res.ok) {
-          const body = (await res.json().catch(() => null)) as
-            | { error?: { code?: string; message?: string } }
-            | null;
-          throw makeApiError(
-            res.status,
-            body?.error?.code ?? `http-${res.status}`,
-            body?.error?.message ?? "A chunk failed to upload."
-          );
+        } finally {
+          workers--;
+          useTransfers.getState().patch(item.id, { connections: Math.max(0, workers) });
         }
-        received.add(index);
-        speedo.push(blob.size);
-        const transferred = bytesOf(received);
-        const bps = speedo.bps;
-        useTransfers.getState().patch(item.id, {
-          transferred: Math.min(transferred, item.size),
-          speedBps: bps,
-          etaSec: bps > 0 ? (item.size - transferred) / bps : null,
-          receivedChunks: new Set(received),
-        });
-      });
-      this.persistThrottled();
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(UPLOAD_PARALLEL, missing.length) }, () => runWorker())
+      );
     }
 
     if (!this.stillActive(item.id)) return;
@@ -593,22 +716,138 @@ class TransferEngine {
     });
   }
 
-  /* ---------- download runner ---------- */
+  /* ---------- download runner (IDM-style parallel segments) ---------- */
 
+  /**
+   * Parallel segmented downloads:
+   *  - Desktop (File System Access API): up to 4 range connections stream
+   *    segments into ONE open writable; an ordered flusher writes them to
+   *    disk contiguously. The old code re-opened createWritable() for every
+   *    4 MB chunk, forcing the browser to copy the whole file into a swap
+   *    file per chunk (O(n²) copying) — the main reason big downloads were
+   *    slow and choppy.
+   *  - Everywhere else: segments land in memory and assemble into a Blob.
+   * Both paths keep pause/resume and the cross-device live heartbeat.
+   */
   private async runDownload(item: TransferItem) {
     const speedo = this.speedo(item.id);
     this.reportActivity(item, "active", true); // tell the other devices
+
+    if (item.size <= 0) {
+      saveBlob(new Blob([]), item.name);
+      useTransfers.getState().patch(item.id, {
+        status: "completed",
+        transferred: 0,
+        speedBps: 0,
+        etaSec: null,
+        completedAt: Date.now(),
+        connections: 0,
+      });
+      this.reportActivity(item, "done", true);
+      this.persist();
+      return;
+    }
+
     const canStream =
       typeof window !== "undefined" &&
       "showSaveFilePicker" in window &&
       item.size > 8 * 1024 * 1024;
 
-    if (!canStream) {
-      await this.downloadToBlob(item, speedo);
+    if (canStream) {
+      await this.downloadToDisk(item, speedo);
       return;
     }
+    await this.downloadToBlob(item, speedo);
+  }
 
-    // Streaming to disk with pause/resume + cross-reload resume.
+  /**
+   * Shared segment scheduler: N parallel workers each claim the next
+   * byte-range segment from `indices` and deliver it to `onSegment`.
+   * Retries live inside each segment; abort (pause/cancel) kills all.
+   */
+  private async runSegments(
+    item: TransferItem,
+    opts: {
+      url: string;
+      indices: number[];
+      segSize: number;
+      base: number;
+      workers: number;
+      speedo: Speedometer;
+      onSegment: (index: number, parts: BlobPart[]) => Promise<void>;
+      onBytes: (n: number) => void;
+    }
+  ): Promise<void> {
+    const { url, speedo, onSegment, onBytes } = opts;
+    const queue = opts.indices;
+    let cursor = 0;
+    let workers = 0;
+
+    const runWorker = async (): Promise<void> => {
+      workers++;
+      useTransfers.getState().patch(item.id, { connections: Math.max(1, workers) });
+      try {
+        for (;;) {
+          if (!this.stillActive(item.id)) return;
+          const my = cursor++;
+          if (my >= queue.length) return;
+          const index = queue[my];
+          const start = opts.base + index * opts.segSize;
+          const end = Math.min(item.size, start + opts.segSize) - 1;
+          await this.withRetry(item, async () => {
+            const res = await fetch(url, {
+              headers: transferHeaders({ Range: `bytes=${start}-${end}` }),
+              signal: item.controller?.signal,
+            });
+            // A plain 200 (range ignored) is only acceptable when this
+            // "segment" is actually the whole file.
+            if (
+              res.status !== 206 &&
+              !(res.status === 200 && start === 0 && end === item.size - 1)
+            ) {
+              const body = (await res.json().catch(() => null)) as
+                | { error?: { message?: string } }
+                | null;
+              throw makeApiError(
+                res.status,
+                `http-${res.status}`,
+                body?.error?.message ?? "Download failed."
+              );
+            }
+            const reader = res.body!.getReader();
+            const parts: BlobPart[] = [];
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              parts.push(value as unknown as BlobPart);
+              speedo.push(value.byteLength);
+              onBytes(value.byteLength);
+            }
+            const expected = end - start + 1;
+            const got = parts.reduce(
+              (a, p) => a + (p as ArrayBufferView).byteLength,
+              0
+            );
+            if (got !== expected) {
+              throw makeApiError(0, "network", "Connection dropped mid-segment — retrying.");
+            }
+            await onSegment(index, parts);
+          });
+        }
+      } finally {
+        workers--;
+        useTransfers.getState().patch(item.id, { connections: Math.max(0, workers) });
+      }
+    };
+
+    await Promise.all(Array.from({ length: Math.max(1, opts.workers) }, () => runWorker()));
+  }
+
+  /* ----- sink 1: streaming to real disk (File System Access API) ----- */
+
+  private async downloadToDisk(item: TransferItem, speedo: Speedometer) {
+    const url = downloadUrlOf(item);
+
     let handle: FileSystemFileHandle | null =
       (await idb.get<FileSystemFileHandle>(item.id)) ?? null;
 
@@ -633,69 +872,139 @@ class TransferEngine {
       return;
     }
 
-    // Resume point: current size on disk
-    let offset = 0;
-    try {
-      const file = await handle.getFile();
-      offset = Math.min(file.size, item.size);
-    } catch {
-      offset = 0;
+    // Settle any writes from a previous run of this item before reading the
+    // resume point (pause keeps the writer open — its tail writes may still
+    // be flushing).
+    let settleGuard = 0;
+    while (this.dlWriting.get(item.id) && settleGuard < 400) {
+      await new Promise((r) => setTimeout(r, 5));
+      settleGuard++;
     }
-    if (offset >= item.size && item.size > 0) {
+
+    // ONE writable for the whole run — kept open across pause/resume within
+    // this page session. (Reopening per chunk used to force the browser to
+    // copy the entire file into a fresh swap each time.)
+    let writer = this.dlWriters.get(item.id);
+    if (!writer) {
+      let offset = 0;
+      try {
+        const file = await handle.getFile();
+        offset = Math.min(file.size, item.size);
+      } catch {
+        offset = 0;
+      }
+      const writable = await (
+        handle as FileSystemFileHandle & {
+          createWritable: (opts?: { keepExistingData?: boolean }) => Promise<WritableLike>;
+        }
+      ).createWritable({ keepExistingData: true });
+      await writable.seek(offset);
+      writer = { writable, writePos: offset };
+      this.dlWriters.set(item.id, writer);
+    }
+
+    if (writer.writePos >= item.size && item.size > 0) {
+      // everything is already on disk (e.g. resumed after a finished run)
+      try {
+        await writer.writable.close();
+      } catch {
+        /* already closed */
+      }
+      this.dlWriters.delete(item.id);
       useTransfers.getState().patch(item.id, {
         status: "completed",
         transferred: item.size,
         completedAt: Date.now(),
         speedBps: 0,
         etaSec: null,
+        connections: 0,
       });
       await idb.del(item.id);
       this.reportActivity(item, "done", true);
       this.persist();
       return;
     }
-    useTransfers.getState().patch(item.id, { transferred: offset });
+    useTransfers.getState().patch(item.id, {
+      transferred: writer.writePos,
+      connections: 0,
+    });
 
-    while (offset < item.size) {
-      if (!this.stillActive(item.id)) return;
-      const end = Math.min(item.size, offset + CHUNK_SIZE) - 1;
-      await this.withRetry(item, async () => {
-        const url = `/api/shares/${item.shareId}/download?path=${encodeURIComponent(item.path)}`;
-        const res = await fetch(url, {
-          headers: transferHeaders({ Range: `bytes=${offset}-${end}` }),
-          signal: item.controller?.signal,
-        });
-        if (!res.ok && res.status !== 206) {
-          const body = (await res.json().catch(() => null)) as
-            | { error?: { message?: string } }
-            | null;
-          throw makeApiError(res.status, `http-${res.status}`, body?.error?.message ?? "Download failed.");
-        }
-        const writable = await (
-          handle as FileSystemFileHandle & {
-            createWritable: (opts?: { keepExistingData?: boolean }) => Promise<FileSystemWritableFileStream>;
-          }
-        ).createWritable({ keepExistingData: true });
-        await writable.seek(offset);
-        const reader = res.body!.getReader();
+    const { segSize, count, workers } = planDownload(item.size, writer.writePos);
+    const base = writer.writePos;
+
+    // Ordered flusher: segments finish out of order; only a contiguous run
+    // is written, so the disk file stays valid & resumable at all times.
+    const pending = new Map<number, BlobPart[]>();
+    let nextToWrite = 0;
+    let writeError: Error | null = null;
+
+    const pumpWrites = async (): Promise<void> => {
+      if (this.dlWriting.get(item.id) || !writer) return;
+      this.dlWriting.set(item.id, true);
+      try {
         for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          await writable.write(value);
-          offset += value.byteLength;
-          speedo.push(value.byteLength);
-          const bps = speedo.bps;
-          useTransfers.getState().patch(item.id, {
-            transferred: offset,
-            speedBps: bps,
-            etaSec: bps > 0 ? (item.size - offset) / bps : null,
-          });
-          this.reportActivity(item); // throttled heartbeat for other devices
+          const parts = pending.get(nextToWrite);
+          if (!parts || !writer) break;
+          pending.delete(nextToWrite);
+          for (const part of parts) await writer.writable.write(part);
+          nextToWrite++;
+          writer.writePos += parts.reduce(
+            (a, p) => a + (p as ArrayBufferView).byteLength,
+            0
+          );
+          useTransfers.getState().patch(item.id, { transferred: writer.writePos });
         }
-        await writable.close();
-      });
-      this.persistThrottled();
+      } catch (err) {
+        writeError = err as Error;
+      } finally {
+        this.dlWriting.set(item.id, false);
+      }
+    };
+
+    await this.runSegments(item, {
+      url,
+      indices: Array.from({ length: count }, (_, i) => i),
+      segSize,
+      base,
+      workers,
+      speedo,
+      onBytes: () => {
+        this.reportActivity(item); // throttled heartbeat for other devices
+      },
+      onSegment: async (index, parts) => {
+        pending.set(index, parts);
+        void pumpWrites();
+        // wait until THIS segment actually reached the disk (contiguity)
+        while (nextToWrite <= index && !writeError && this.stillActive(item.id)) {
+          await new Promise((r) => setTimeout(r, 5));
+        }
+        if (writeError) throw writeError;
+        if (!this.stillActive(item.id)) {
+          throw makeApiError(0, "aborted", "Transfer stopped.");
+        }
+      },
+    });
+
+    if (!this.stillActive(item.id)) {
+      // Paused or canceled mid-flight — deliberately leave the writer open
+      // in dlWriters: resume() reuses it (no re-copy, no progress loss) and
+      // cancel() aborts & discards it.
+      return;
     }
+
+    // Drain the tail writes, then commit the file.
+    let drainGuard = 0;
+    while (this.dlWriting.get(item.id) && drainGuard < 2400) {
+      await new Promise((r) => setTimeout(r, 5));
+      drainGuard++;
+    }
+    if (writeError) throw writeError;
+    if (nextToWrite < count) {
+      throw makeApiError(0, "network", "Download interrupted — retrying.");
+    }
+
+    await writer.writable.close();
+    this.dlWriters.delete(item.id);
 
     useTransfers.getState().patch(item.id, {
       status: "completed",
@@ -703,58 +1012,84 @@ class TransferEngine {
       speedBps: 0,
       etaSec: null,
       completedAt: Date.now(),
+      connections: 0,
     });
     await idb.del(item.id);
     this.reportActivity(item, "done", true);
     this.persist();
   }
 
+  /* ----- sink 2: in-memory segments → Blob (mobile & other browsers) ----- */
+
   private async downloadToBlob(item: TransferItem, speedo: Speedometer) {
-    const url = `/api/shares/${item.shareId}/download?path=${encodeURIComponent(item.path)}`;
-    const headers = transferHeaders(
-      item.transferred > 0 ? { Range: `bytes=${item.transferred}-` } : {}
-    );
-    this.reportActivity(item, "active", true);
+    const url = downloadUrlOf(item);
 
-    const res = await fetch(url, {
-      headers,
-      signal: item.controller?.signal,
+    // Finished segments survive pause/retry in memory, so a network blip
+    // never re-downloads them. (The old single-stream "resume" actually
+    // produced corrupt files after a drop — this replaces it.)
+    const segs = this.dlSegments.get(item.id) ?? new Map<number, Blob>();
+    this.dlSegments.set(item.id, segs);
+    let plan = this.dlPlans.get(item.id);
+    if (!plan) {
+      plan = { ...planDownload(item.size, 0), base: 0 };
+      this.dlPlans.set(item.id, plan);
+    }
+
+    let committed = 0;
+    const missing: number[] = [];
+    for (let i = 0; i < plan.count; i++) {
+      const have = segs.get(i);
+      if (have) committed += have.size;
+      else missing.push(i);
+    }
+    if (missing.length === 0) {
+      this.finishBlobDownload(item, plan.count, segs);
+      return;
+    }
+    useTransfers.getState().patch(item.id, {
+      transferred: committed,
+      connections: 0,
     });
-    if (!res.ok && res.status !== 206) {
-      const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-      throw makeApiError(res.status, `http-${res.status}`, body?.error?.message ?? "Download failed.");
-    }
 
-    const total = Number(res.headers.get("Content-Length") ?? 0) + (res.status === 206 ? item.transferred : 0);
-    const reader = res.body!.getReader();
-    const chunks: BlobPart[] = [];
-    let received = res.status === 206 ? item.transferred : 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      received += value.byteLength;
-      speedo.push(value.byteLength);
-      const bps = speedo.bps;
-      useTransfers.getState().patch(item.id, {
-        transferred: received,
-        speedBps: bps,
-        etaSec: bps > 0 ? Math.max(0, item.size - received) / bps : null,
-      });
-      this.reportActivity(item); // throttled heartbeat for other devices
-    }
+    let received = committed;
+    await this.runSegments(item, {
+      url,
+      indices: missing,
+      segSize: plan.segSize,
+      base: plan.base,
+      workers: Math.min(plan.workers, missing.length),
+      speedo,
+      onBytes: (n) => {
+        received += n;
+        const bps = speedo.bps;
+        useTransfers.getState().patch(item.id, {
+          transferred: Math.min(received, item.size),
+          speedBps: bps,
+          etaSec: bps > 0 ? Math.max(0, item.size - received) / bps : null,
+        });
+        this.reportActivity(item); // throttled heartbeat for other devices
+      },
+      onSegment: async (index, parts) => {
+        segs.set(index, new Blob(parts));
+        this.persistThrottled();
+      },
+    });
 
-    const finalBuffer = chunks as BlobPart[];
-    const blob = new Blob(finalBuffer);
-    const filename = item.name;
-    const url2 = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url2;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url2), 30_000);
+    this.finishBlobDownload(item, plan.count, segs);
+  }
+
+  private finishBlobDownload(item: TransferItem, count: number, segs: Map<number, Blob>) {
+    const ordered: Blob[] = [];
+    for (let i = 0; i < count; i++) {
+      const part = segs.get(i);
+      if (!part) {
+        throw makeApiError(0, "internal", "Download segments are incomplete.");
+      }
+      ordered.push(part);
+    }
+    saveBlob(new Blob(ordered), item.name);
+    this.dlSegments.delete(item.id);
+    this.dlPlans.delete(item.id);
 
     useTransfers.getState().patch(item.id, {
       status: "completed",
@@ -762,8 +1097,8 @@ class TransferEngine {
       speedBps: 0,
       etaSec: null,
       completedAt: Date.now(),
+      connections: 0,
     });
-    void total;
     this.reportActivity(item, "done", true);
     this.persist();
   }

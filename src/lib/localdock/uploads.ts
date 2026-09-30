@@ -14,7 +14,7 @@
 import crypto from "node:crypto";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { UPLOADS_DIR } from "./store";
+import { UPLOADS_DIR, withLock } from "./store";
 import { uniquifyPath, sanitizeUploadName } from "./paths";
 import type { UploadSessionInfo } from "./types";
 
@@ -171,36 +171,41 @@ export async function writeChunk(
   index: number,
   data: Buffer
 ): Promise<{ received: number; totalChunks: number; chunkSize: number }> {
-  const session = readSession(uploadId);
-  if (!session || session.status !== "active") throw new Error("session-not-found");
-  if (!Number.isInteger(index) || index < 0 || index >= session.totalChunks) {
-    throw new Error("invalid-chunk-index");
-  }
-  const expectedLen =
-    index === session.totalChunks - 1
-      ? session.size - (session.totalChunks - 1) * session.chunkSize
-      : session.chunkSize;
-  if (data.length === 0 || data.length > session.chunkSize) {
-    throw new Error("invalid-chunk-size");
-  }
-  if (session.size > 0 && expectedLen > 0 && data.length > expectedLen) {
-    throw new Error("invalid-chunk-size");
-  }
+  // Clients upload chunks in PARALLEL now — the session read-modify-write
+  // (received[] + metadata json) must be serialized or updates get lost,
+  // which would make completion report phantom missing chunks.
+  return withLock(`upload:${uploadId}`, async () => {
+    const session = readSession(uploadId);
+    if (!session || session.status !== "active") throw new Error("session-not-found");
+    if (!Number.isInteger(index) || index < 0 || index >= session.totalChunks) {
+      throw new Error("invalid-chunk-index");
+    }
+    const expectedLen =
+      index === session.totalChunks - 1
+        ? session.size - (session.totalChunks - 1) * session.chunkSize
+        : session.chunkSize;
+    if (data.length === 0 || data.length > session.chunkSize) {
+      throw new Error("invalid-chunk-size");
+    }
+    if (session.size > 0 && expectedLen > 0 && data.length > expectedLen) {
+      throw new Error("invalid-chunk-size");
+    }
 
-  const fh = await fsp.open(partPath(uploadId), "r+");
-  try {
-    await fh.write(data, 0, data.length, index * session.chunkSize);
-  } finally {
-    await fh.close();
-  }
+    const fh = await fsp.open(partPath(uploadId), "r+");
+    try {
+      await fh.write(data, 0, data.length, index * session.chunkSize);
+    } finally {
+      await fh.close();
+    }
 
-  if (!session.received.includes(index)) session.received.push(index);
-  await writeSession(session);
-  return {
-    received: session.received.length,
-    totalChunks: session.totalChunks,
-    chunkSize: session.chunkSize,
-  };
+    if (!session.received.includes(index)) session.received.push(index);
+    await writeSession(session);
+    return {
+      received: session.received.length,
+      totalChunks: session.totalChunks,
+      chunkSize: session.chunkSize,
+    };
+  });
 }
 
 export async function statusOf(
@@ -215,11 +220,12 @@ export async function completeUpload(
   uploadId: string,
   expectedSha256?: string
 ): Promise<UploadSessionInfo> {
-  const session = readSession(uploadId);
-  if (!session || session.status !== "active") {
-    if (session?.status === "completed") return toInfo(session);
-    throw new Error("session-not-found");
-  }
+  return withLock(`upload:${uploadId}`, async () => {
+    const session = readSession(uploadId);
+    if (!session || session.status !== "active") {
+      if (session?.status === "completed") return toInfo(session);
+      throw new Error("session-not-found");
+    }
   const missing: number[] = [];
   for (let i = 0; i < session.totalChunks; i++) {
     if (!session.received.includes(i)) missing.push(i);
@@ -272,6 +278,7 @@ export async function completeUpload(
   session.sha256 = hex;
   await writeSession(session);
   return toInfo(session);
+  });
 }
 
 export async function cancelUpload(uploadId: string): Promise<boolean> {

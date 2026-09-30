@@ -215,4 +215,9 @@ export interface TransferItem {
   hashHex?: string;
   /** Uploads restored from a previous page load: the file must be re-picked. */
   needsFile?: boolean;
+  /**
+   * Live count of parallel connections this transfer is using (IDM-style
+   * chunked engine). Displayed as a badge; 0/undefined = single stream.
+   */
+  connections?: number;
 }

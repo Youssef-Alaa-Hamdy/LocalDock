@@ -110,6 +110,11 @@ export function TransferRow({
                     {item.etaSec !== null && (
                       <span> · ETA {formatEta(item.etaSec)}</span>
                     )}
+                    {(item.connections ?? 0) > 1 && (
+                      <span className="font-semibold text-primary">
+                        {" "}· {item.connections} links
+                      </span>
+                    )}
                   </>
                 )}
                 {queued && "Waiting in queue…"}

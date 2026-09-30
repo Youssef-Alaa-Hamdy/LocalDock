@@ -183,6 +183,11 @@ export const Api = {
     homeDirRel?: string;
     /** Absolute OS path from the native dialog (desktop build only). */
     absPath?: string;
+    /**
+     * Companion-device flow: create the share inside the server-managed
+     * "From Devices" area; the caller uploads the content right after.
+     */
+    viaUpload?: boolean;
     access: "read" | "readwrite";
     guestEnabled: boolean;
   }) =>

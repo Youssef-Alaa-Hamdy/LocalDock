@@ -1,0 +1,1797 @@
+diff --git a/src/app/api/shares/route.ts b/src/app/api/shares/route.ts
+index 7369dfd..ac92744 100644
+--- a/src/app/api/shares/route.ts
++++ b/src/app/api/shares/route.ts
+@@ -9,6 +9,7 @@ import {
+ } from "@/lib/localdock/registry";
+ import { readJsonBody, requireOwner } from "@/lib/localdock/api-helpers";
+ import { measureDir, resolveNativeFolder } from "@/lib/localdock/files";
++import { sanitizeName, uniquifyPath } from "@/lib/localdock/paths";
+ import { HOME, SHARES_DIR } from "@/lib/localdock/store";
+ import { resolveSafe } from "@/lib/localdock/paths";
+ import type { ShareAccess } from "@/lib/localdock/types";
+@@ -31,6 +32,12 @@ interface CreateBody {
+    * only — rejected outright in web deployments).
+    */
+   absPath?: string;
++  /**
++   * Companion-device flow: the folder lives on the CALLING device, so the
++   * server creates an empty managed folder (Shares/From Devices/<name>) and
++   * the device uploads its content right after. No server path is needed.
++   */
++  viaUpload?: boolean;
+   access?: ShareAccess;
+   guestEnabled?: boolean;
+ }
+@@ -43,24 +50,33 @@ export async function POST(req: Request) {
+     return jsonError(400, "bad-name", "Please give this folder a name.");
+   }
+ 
+-  const rawPath = (body.absPath || body.homeDirRel || "").trim();
+-  if (!rawPath) {
+-    return jsonError(400, "bad-path", "Please select or enter a folder path to share.");
+-  }
+-
+   let rootAbs: string;
+-  if (path.isAbsolute(rawPath)) {
+-    const native = await resolveNativeFolder(rawPath);
+-    if (!native.ok) return jsonError(400, native.code, native.message);
+-    rootAbs = native.abs;
++  if (body.viaUpload) {
++    // Companion device: the content will be uploaded — create a clean,
++    // unique managed folder under Shares/From Devices.
++    const base = sanitizeName(body.name) ?? "Shared folder";
++    const fromDevices = path.join(SHARES_DIR, "From Devices");
++    rootAbs = uniquifyPath(fromDevices, base, true);
++    await fsp.mkdir(rootAbs, { recursive: true });
+   } else {
+-    const resolved = resolveSafe(SHARES_DIR, rawPath);
+-    if (resolved.ok && resolved.abs) {
+-      rootAbs = resolved.abs;
+-    } else {
+-      const native = await resolveNativeFolder(path.resolve(rawPath));
++    const rawPath = (body.absPath || body.homeDirRel || "").trim();
++    if (!rawPath) {
++      return jsonError(400, "bad-path", "Please select or enter a folder path to share.");
++    }
++
++    if (path.isAbsolute(rawPath)) {
++      const native = await resolveNativeFolder(rawPath);
+       if (!native.ok) return jsonError(400, native.code, native.message);
+       rootAbs = native.abs;
++    } else {
++      const resolved = resolveSafe(SHARES_DIR, rawPath);
++      if (resolved.ok && resolved.abs) {
++        rootAbs = resolved.abs;
++      } else {
++        const native = await resolveNativeFolder(path.resolve(rawPath));
++        if (!native.ok) return jsonError(400, native.code, native.message);
++        rootAbs = native.abs;
++      }
+     }
+   }
+ 
+@@ -76,9 +92,15 @@ export async function POST(req: Request) {
+     setShareStats(share.id, sizeBytes, itemCount)
+   );
+ 
+-  await logActivity("share.created", `Started sharing “${share.name}”`, {
+-    access: share.access,
+-    guest: share.guestEnabled,
+-  });
++  await logActivity(
++    "share.created",
++    body.viaUpload
++      ? `Started sharing “${share.name}” — content uploading from a device`
++      : `Started sharing “${share.name}”`,
++    {
++      access: share.access,
++      guest: share.guestEnabled,
++    }
++  );
+   return jsonOk({ share }, 201);
+ }
+diff --git a/src/components/localdock/add-share-dialog.tsx b/src/components/localdock/add-share-dialog.tsx
+index 13ea1c5..7487d77 100644
+--- a/src/components/localdock/add-share-dialog.tsx
++++ b/src/components/localdock/add-share-dialog.tsx
+@@ -16,6 +16,13 @@ import { Switch } from "@/components/ui/switch";
+ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+ import { FolderBrowserDialog } from "./folder-browser-dialog";
+ import { Api } from "@/lib/localdock/client/api";
++import { transfers } from "@/lib/localdock/client/transfer-engine";
++import { isHostMachine } from "@/lib/localdock/client/host";
++import {
++  pickDeviceFolder,
++  type DeviceFolderPick,
++} from "@/lib/localdock/client/device-folder";
++import { formatBytes } from "@/lib/localdock/client/format";
+ import { useRefresh } from "./data-hooks";
+ import { NativePickCard } from "./primitives";
+ import { isDesktop, pickNativeFolder } from "@/lib/localdock/client/desktop";
+@@ -65,6 +72,12 @@ export function AddShareDialog({
+   const [qrOpen, setQrOpen] = useState(false);
+   const refresh = useRefresh();
+   const desktop = isDesktop();
++  const host = isHostMachine();
++
++  /* Companion-device flow: the folder is picked from THIS device and
++   * uploaded — the server-side drive browser would only confuse things. */
++  const [devicePick, setDevicePick] = useState<DeviceFolderPick | null>(null);
++  const [pickingDevice, setPickingDevice] = useState(false);
+ 
+   useEffect(() => {
+     if (open) {
+@@ -77,15 +90,20 @@ export function AddShareDialog({
+       setCreated(null);
+       setQrOpen(false);
+       setBrowserOpen(false);
++      setDevicePick(null);
+ 
+-      // Fetch real system shortcuts & drives
+-      void Api.fsBrowse("", "shares")
+-        .then((res) => {
+-          if (res?.dirs) setShortcuts(res.dirs);
+-        })
+-        .catch(() => undefined);
++      if (host) {
++        // Fetch real system shortcuts & drives (host machine only)
++        void Api.fsBrowse("", "shares")
++          .then((res) => {
++            if (res?.dirs) setShortcuts(res.dirs);
++          })
++          .catch(() => undefined);
++      } else {
++        setShortcuts([]);
++      }
+     }
+-  }, [open]);
++  }, [open, host]);
+ 
+   const nameFromPath = (p: string) => {
+     const clean = p.replace(/[\\/]+$/, "");
+@@ -116,13 +134,63 @@ export function AddShareDialog({
+     }
+   };
+ 
+-  const create = async () => {
+-    if (!pickedAbs) {
+-      toast.error("Please choose a folder to share.");
+-      return;
++  /** Companion devices: pick a folder from THIS device (browser-native). */
++  const pickFromDevice = async () => {
++    setPickingDevice(true);
++    try {
++      const pick = await pickDeviceFolder();
++      if (pick && pick.entries.length > 0) {
++        setDevicePick(pick);
++        setName(pick.rootName || "Shared folder");
++        setStep("configure");
++      } else if (pick) {
++        toast.error("That folder has no usable files.");
++      }
++    } finally {
++      setPickingDevice(false);
+     }
++  };
++
++  const deviceBytes = devicePick
++    ? devicePick.entries.reduce((a, e) => a + e.file.size, 0)
++    : 0;
++
++  const create = async () => {
+     setCreating(true);
+     try {
++      if (devicePick) {
++        // Companion flow: create a managed share, then upload the tree.
++        const res = await Api.createShare({
++          name: name.trim() || devicePick.rootName || "Shared folder",
++          access,
++          guestEnabled: guest,
++          viaUpload: true,
++        });
++        for (const entry of devicePick.entries) {
++          transfers.enqueueUpload({
++            shareId: res.share.id,
++            shareName: res.share.name,
++            dirPath: entry.relDir,
++            file: entry.file,
++          });
++        }
++        setCreated(res.share);
++        setStep("done");
++        refresh.refreshShares();
++        refresh.refreshActivity();
++        refresh.refreshSystem();
++        toast.success(
++          devicePick.entries.length === 1
++            ? "Uploading 1 file from this device…"
++            : `Uploading ${devicePick.entries.length} files from this device…`
++        );
++        return;
++      }
++
++      if (!pickedAbs) {
++        toast.error("Please choose a folder to share.");
++        return;
++      }
+       const res = await Api.createShare({
+         name: name.trim() || nameFromPath(pickedAbs) || "Shared folder",
+         absPath: pickedAbs,
+@@ -150,80 +218,101 @@ export function AddShareDialog({
+               <DialogHeader>
+                 <DialogTitle>Add Folder to Share</DialogTitle>
+                 <DialogDescription>
+-                  Choose any folder on this computer to share with your devices on the local network.
++                  {host
++                    ? "Choose any folder on this computer to share with your devices on the local network."
++                    : "You're on a companion device — pick a folder from THIS device. It uploads to the computer over your network, then becomes shared."}
+                 </DialogDescription>
+               </DialogHeader>
+ 
+               <div className="space-y-4">
+-                {/* Native Picker Card */}
+-                <NativePickCard
+-                  title="Select folder on this computer"
+-                  sub="Opens File Explorer to pick any folder on your PC"
+-                  busy={picking}
+-                  onClick={() => void pickNative()}
+-                />
+-
+-                {/* Direct Path Input */}
+-                <div className="space-y-2 rounded-2xl border border-border bg-muted/30 p-3.5">
+-                  <Label htmlFor="manual-folder-path" className="text-xs font-semibold text-foreground">
+-                    Or enter path directly:
+-                  </Label>
+-                  <div className="flex gap-2">
+-                    <Input
+-                      id="manual-folder-path"
+-                      value={manualPath}
+-                      onChange={(e) => setManualPath(e.target.value)}
+-                      placeholder="e.g. D:\Downloads or C:\Users\..."
+-                      className="rounded-xl font-mono text-xs"
+-                      onKeyDown={(e) => e.key === "Enter" && choosePath(manualPath)}
++                {host ? (
++                  <>
++                    {/* Native Picker Card */}
++                    <NativePickCard
++                      title="Select folder on this computer"
++                      sub="Opens File Explorer to pick any folder on your PC"
++                      busy={picking}
++                      onClick={() => void pickNative()}
+                     />
+-                    <Button
+-                      size="sm"
+-                      className="shrink-0 rounded-xl"
+-                      disabled={!manualPath.trim()}
+-                      onClick={() => choosePath(manualPath)}
+-                    >
+-                      Continue
+-                    </Button>
+-                  </div>
+ 
+-                  {/* System Shortcuts */}
+-                  {shortcuts.length > 0 && (
+-                    <div className="pt-1.5">
+-                      <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+-                        <Sparkles className="size-3 text-primary" />
+-                        Quick access:
+-                      </p>
+-                      <div className="flex flex-wrap gap-1.5">
+-                        {shortcuts.slice(0, 6).map((q) => (
+-                          <button
+-                            key={q.path}
+-                            type="button"
+-                            onClick={() => choosePath(q.path)}
+-                            className="flex items-center gap-1 rounded-lg border border-border/80 bg-background px-2.5 py-1 text-xs font-medium transition-colors hover:border-primary/50 hover:bg-accent"
+-                          >
+-                            {q.kind === "drive" ? (
+-                              <HardDrive className="size-3 text-amber-500" />
+-                            ) : (
+-                              <FolderOpen className="size-3 text-primary" />
+-                            )}
+-                            <span>{q.name}</span>
+-                          </button>
+-                        ))}
++                    {/* Direct Path Input */}
++                    <div className="space-y-2 rounded-2xl border border-border bg-muted/30 p-3.5">
++                      <Label htmlFor="manual-folder-path" className="text-xs font-semibold text-foreground">
++                        Or enter path directly:
++                      </Label>
++                      <div className="flex gap-2">
++                        <Input
++                          id="manual-folder-path"
++                          value={manualPath}
++                          onChange={(e) => setManualPath(e.target.value)}
++                          placeholder="e.g. D:\Downloads or C:\Users\..."
++                          className="rounded-xl font-mono text-xs"
++                          onKeyDown={(e) => e.key === "Enter" && choosePath(manualPath)}
++                        />
++                        <Button
++                          size="sm"
++                          className="shrink-0 rounded-xl"
++                          disabled={!manualPath.trim()}
++                          onClick={() => choosePath(manualPath)}
++                        >
++                          Continue
++                        </Button>
+                       </div>
++
++                      {/* System Shortcuts */}
++                      {shortcuts.length > 0 && (
++                        <div className="pt-1.5">
++                          <p className="mb-1.5 flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
++                            <Sparkles className="size-3 text-primary" />
++                            Quick access:
++                          </p>
++                          <div className="flex flex-wrap gap-1.5">
++                            {shortcuts.slice(0, 6).map((q) => (
++                              <button
++                                key={q.path}
++                                type="button"
++                                onClick={() => choosePath(q.path)}
++                                className="flex items-center gap-1 rounded-lg border border-border/80 bg-background px-2.5 py-1 text-xs font-medium transition-colors hover:border-primary/50 hover:bg-accent"
++                              >
++                                {q.kind === "drive" ? (
++                                  <HardDrive className="size-3 text-amber-500" />
++                                ) : (
++                                  <FolderOpen className="size-3 text-primary" />
++                                )}
++                                <span>{q.name}</span>
++                              </button>
++                            ))}
++                          </div>
++                        </div>
++                      )}
+                     </div>
+-                  )}
+-                </div>
+ 
+-                {/* Browse Computer Button */}
+-                <Button
+-                  variant="outline"
+-                  className="w-full rounded-xl gap-2"
+-                  onClick={() => setBrowserOpen(true)}
+-                >
+-                  <FolderSearch className="size-4 text-muted-foreground" />
+-                  Browse drives & folders on computer…
+-                </Button>
++                    {/* Browse Computer Button */}
++                    <Button
++                      variant="outline"
++                      className="w-full rounded-xl gap-2"
++                      onClick={() => setBrowserOpen(true)}
++                    >
++                      <FolderSearch className="size-4 text-muted-foreground" />
++                      Browse drives & folders on computer…
++                    </Button>
++                  </>
++                ) : (
++                  <>
++                    {/* Device folder picker (companion flow) */}
++                    <NativePickCard
++                      title="Select folder from this device"
++                      sub="Opens this device's folder picker — content uploads to the computer"
++                      busy={pickingDevice}
++                      onClick={() => void pickFromDevice()}
++                    />
++                    <p className="rounded-xl bg-primary/10 px-3 py-2 text-xs leading-relaxed text-primary">
++                      Folders that already live on the computer can only be shared from the
++                      computer itself. Anything you pick here is uploaded safely over your local
++                      network — no internet involved.
++                    </p>
++                  </>
++                )}
+               </div>
+             </>
+           )}
+@@ -240,21 +329,38 @@ export function AddShareDialog({
+               <div className="space-y-5">
+                 <div className="space-y-2">
+                   <Label htmlFor="share-name" className="text-xs font-semibold">
+-                    Folder name & real path
++                    {devicePick ? "Folder name & source" : "Folder name & real path"}
+                   </Label>
+-                  <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2.5">
+-                    <FolderOpen className="size-4 shrink-0 text-primary" />
+-                    <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground font-medium">
+-                      {pickedAbs}
+-                    </span>
+-                    <button
+-                      className="text-muted-foreground transition-colors hover:text-foreground"
+-                      onClick={() => setStep("pick")}
+-                      aria-label="Change folder"
+-                    >
+-                      <Pencil className="size-4" />
+-                    </button>
+-                  </div>
++                  {devicePick ? (
++                    <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2.5">
++                      <FolderOpen className="size-4 shrink-0 text-primary" />
++                      <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
++                        {devicePick.entries.length} file{devicePick.entries.length === 1 ? "" : "s"} ·{" "}
++                        {formatBytes(deviceBytes)} — uploads from this device
++                      </span>
++                      <button
++                        className="text-muted-foreground transition-colors hover:text-foreground"
++                        onClick={() => setStep("pick")}
++                        aria-label="Change folder"
++                      >
++                        <Pencil className="size-4" />
++                      </button>
++                    </div>
++                  ) : (
++                    <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2.5">
++                      <FolderOpen className="size-4 shrink-0 text-primary" />
++                      <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground font-medium">
++                        {pickedAbs}
++                      </span>
++                      <button
++                        className="text-muted-foreground transition-colors hover:text-foreground"
++                        onClick={() => setStep("pick")}
++                        aria-label="Change folder"
++                      >
++                        <Pencil className="size-4" />
++                      </button>
++                    </div>
++                  )}
+                   <Input
+                     id="share-name"
+                     value={name}
+@@ -332,7 +438,9 @@ export function AddShareDialog({
+                   Shared successfully
+                 </DialogTitle>
+                 <DialogDescription>
+-                  “{created.name}” is now shared and accessible on your network.
++                  {devicePick
++                    ? `“${created.name}” is shared — its content (${devicePick.entries.length} files) is uploading from this device. Track progress in the Transfer Dock.`
++                    : `“${created.name}” is now shared and accessible on your network.`}
+                 </DialogDescription>
+               </DialogHeader>
+               <div className="space-y-3 rounded-2xl border border-border bg-muted/40 p-4">
+diff --git a/src/components/localdock/file-browser.tsx b/src/components/localdock/file-browser.tsx
+index 22a78c6..2be76d5 100644
+--- a/src/components/localdock/file-browser.tsx
++++ b/src/components/localdock/file-browser.tsx
+@@ -15,6 +15,7 @@ import {
+   useTransfers,
+   selectDockItems,
+ } from "@/lib/localdock/client/transfer-engine";
++import { pickDeviceFolder, joinDirPath } from "@/lib/localdock/client/device-folder";
+ import {
+   formatBytes,
+   formatDateTime,
+@@ -68,6 +69,7 @@ import {
+   FileVideo,
+   FileQuestion,
+   FolderPlus,
++  FolderUp,
+   Folder,
+   Grid2X2,
+   Image as ImageIcon,
+@@ -425,6 +427,34 @@ export function FileBrowser({
+     );
+   };
+ 
++  /**
++   * Upload a whole FOLDER from this device (browser-native webkitdirectory
++   * picker). The tree keeps its structure — subfolders are recreated inside
++   * the current directory. Works for guests and the owner alike, on any
++   * device — the folder always comes from the device you're holding.
++   */
++  const uploadFolderFromDevice = async () => {
++    const pick = await pickDeviceFolder();
++    if (!pick || pick.entries.length === 0) return;
++    const base = pick.rootName
++      ? joinDirPath(path, pick.rootName)
++      : path;
++    for (const entry of pick.entries) {
++      transfers.enqueueUpload({
++        shareId,
++        shareName,
++        dirPath: joinDirPath(base, entry.relDir),
++        file: entry.file,
++      });
++    }
++    const total = pick.entries.reduce((a, e) => a + e.file.size, 0);
++    toast.success(
++      pick.entries.length === 1
++        ? `Uploading ${pick.entries[0].file.name}`
++        : `Uploading folder with ${pick.entries.length} files (${formatBytes(total)})`
++    );
++  };
++
+   const createFolder = async () => {
+     const name = newFolderName.trim();
+     if (!name) return;
+@@ -732,6 +762,16 @@ export function FileBrowser({
+               <Upload className="size-4" />
+               <span className="hidden sm:inline">Upload</span>
+             </Button>
++            <Button
++              size="icon"
++              variant="outline"
++              className="size-9 rounded-xl"
++              onClick={() => void uploadFolderFromDevice()}
++              aria-label="Upload folder from this device"
++              title="Upload folder from this device"
++            >
++              <FolderUp className="size-4" />
++            </Button>
+             <Button
+               size="icon"
+               variant="outline"
+diff --git a/src/components/localdock/folder-browser-dialog.tsx b/src/components/localdock/folder-browser-dialog.tsx
+index 982d992..8dfd14a 100644
+--- a/src/components/localdock/folder-browser-dialog.tsx
++++ b/src/components/localdock/folder-browser-dialog.tsx
+@@ -24,6 +24,7 @@ import {
+ } from "lucide-react";
+ import { toast } from "sonner";
+ import { cn } from "@/lib/utils";
++import { isHostMachine } from "@/lib/localdock/client/host";
+ 
+ interface DirEntry {
+   name: string;
+@@ -123,6 +124,11 @@ export function FolderBrowserDialog({
+     return <FolderOpen className="size-4 shrink-0 text-primary" />;
+   };
+ 
++  // Companion devices see the HOST computer's drives here. That is only
++  // intuitive on the machine running LocalDock — warn everyone else and
++  // point them to the device-upload flow.
++  const remoteDevice = !isHostMachine();
++
+   return (
+     <Dialog open={open} onOpenChange={onOpenChange}>
+       <DialogContent className="sm:max-w-lg">
+@@ -132,6 +138,12 @@ export function FolderBrowserDialog({
+         </DialogHeader>
+ 
+         <div className="overflow-hidden rounded-2xl border border-border">
++          {remoteDevice && (
++            <p className="border-b border-border bg-warning/10 px-3 py-2 text-xs leading-relaxed text-warning-foreground">
++              These are the drives of the computer running LocalDock. To add folders from THIS
++              device, use “Add Folder” in Shares — it uploads from your device instead.
++            </p>
++          )}
+           <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-3 py-2.5">
+             <Button
+               size="sm"
+diff --git a/src/components/localdock/onboarding.tsx b/src/components/localdock/onboarding.tsx
+index 8b19bcd..8cc5912 100644
+--- a/src/components/localdock/onboarding.tsx
++++ b/src/components/localdock/onboarding.tsx
+@@ -2,6 +2,9 @@
+ 
+ import { useState } from "react";
+ import { Api } from "@/lib/localdock/client/api";
++import { transfers } from "@/lib/localdock/client/transfer-engine";
++import { isHostMachine } from "@/lib/localdock/client/host";
++import { pickDeviceFolder } from "@/lib/localdock/client/device-folder";
+ import { useRefresh } from "./data-hooks";
+ import { LogoMark, StatusDot } from "./primitives";
+ import { FolderBrowserDialog } from "./folder-browser-dialog";
+@@ -34,7 +37,45 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
+   const [addedShare, setAddedShare] = useState<string | null>(null);
+   const [pairOpen, setPairOpen] = useState(false);
+   const [finishing, setFinishing] = useState(false);
++  const [addingFromDevice, setAddingFromDevice] = useState(false);
+   const refresh = useRefresh();
++  const host = isHostMachine();
++
++  /**
++   * Companion devices (phones / laptops over LAN): the first folder is
++   * picked from THIS device and uploaded — browsing the server's drives
++   * from here would be wrong and confusing.
++   */
++  const addFromDevice = async () => {
++    setAddingFromDevice(true);
++    try {
++      const pick = await pickDeviceFolder();
++      if (!pick || pick.entries.length === 0) return;
++      const name = pick.rootName || "My folder";
++      const res = await Api.createShare({
++        name,
++        access: "readwrite",
++        guestEnabled: true,
++        viaUpload: true,
++      });
++      for (const entry of pick.entries) {
++        transfers.enqueueUpload({
++          shareId: res.share.id,
++          shareName: res.share.name,
++          dirPath: entry.relDir,
++          file: entry.file,
++        });
++      }
++      setAddedShare(name);
++      refresh.refreshShares();
++      refresh.refreshSystem();
++      toast.success(`Uploading ${pick.entries.length} files from this device…`);
++    } catch (e) {
++      toast.error((e as Error).message);
++    } finally {
++      setAddingFromDevice(false);
++    }
++  };
+ 
+   const finish = async () => {
+     setFinishing(true);
+@@ -135,7 +176,11 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
+             <div className="rise">
+               <StepHeader
+                 title="Add your first folder"
+-                desc="Pick a folder — it becomes available on your other devices instantly."
++                desc={
++                  host
++                    ? "Pick a folder — it becomes available on your other devices instantly."
++                    : "Pick a folder from this device — it uploads to the computer, then becomes available on your network."
++                }
+                 step={2}
+                 total={3}
+               />
+@@ -146,19 +191,35 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
+                   </span>
+                   <div className="min-w-0 flex-1">
+                     <p className="text-sm font-semibold">“{addedShare}” is being shared</p>
+-                    <p className="text-xs text-muted-foreground">Available on your network now.</p>
++                    <p className="text-xs text-muted-foreground">
++                      {host ? "Available on your network now." : "Uploading from this device now."}
++                    </p>
+                   </div>
+                 </div>
+               ) : (
+                 <button
+-                  onClick={() => setAddOpen(true)}
+-                  className="card-lift mt-4 flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-border py-10 transition-colors hover:border-primary/50 hover:bg-accent/30"
++                  onClick={() => {
++                    if (host) setAddOpen(true);
++                    else void addFromDevice();
++                  }}
++                  disabled={addingFromDevice}
++                  className="card-lift mt-4 flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-border py-10 transition-colors hover:border-primary/50 hover:bg-accent/30 disabled:opacity-60"
+                 >
+                   <span className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                     <FolderPlus className="size-6" strokeWidth={1.8} />
+                   </span>
+-                  <span className="text-sm font-semibold">Choose a folder to share</span>
+-                  <span className="text-xs text-muted-foreground">Documents, photos, projects — anything</span>
++                  <span className="text-sm font-semibold">
++                    {addingFromDevice
++                      ? "Waiting for the folder picker…"
++                      : host
++                        ? "Choose a folder to share"
++                        : "Choose a folder from this device"}
++                  </span>
++                  <span className="text-xs text-muted-foreground">
++                    {host
++                      ? "Documents, photos, projects — anything"
++                      : "It will upload to the computer over your local network"}
++                  </span>
+                 </button>
+               )}
+               <div className="mt-6 flex gap-2">
+@@ -218,26 +279,28 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
+         </p>
+       </div>
+ 
+-      <FolderBrowserDialog
+-        open={addOpen}
+-        onOpenChange={setAddOpen}
+-        mode="shares"
+-        title="Add your first folder"
+-        description="Pick a folder on this computer — or create a new one."
+-        confirmLabel="Share this folder"
+-        onSelect={async (rel) => {
+-          try {
+-            const clean = rel.replace(/[\\/]+$/, "");
+-            const name = clean.split(/[\\/]/).filter(Boolean).pop() || "My folder";
+-            await Api.createShare({ name, absPath: rel, access: "readwrite", guestEnabled: true });
+-            setAddedShare(name);
+-            refresh.refreshShares();
+-            refresh.refreshSystem();
+-          } catch (e) {
+-            toast.error((e as Error).message);
+-          }
+-        }}
+-      />
++      {host && (
++        <FolderBrowserDialog
++          open={addOpen}
++          onOpenChange={setAddOpen}
++          mode="shares"
++          title="Add your first folder"
++          description="Pick a folder on this computer — or create a new one."
++          confirmLabel="Share this folder"
++          onSelect={async (rel) => {
++            try {
++              const clean = rel.replace(/[\\/]+$/, "");
++              const name = clean.split(/[\\/]/).filter(Boolean).pop() || "My folder";
++              await Api.createShare({ name, absPath: rel, access: "readwrite", guestEnabled: true });
++              setAddedShare(name);
++              refresh.refreshShares();
++              refresh.refreshSystem();
++            } catch (e) {
++              toast.error((e as Error).message);
++            }
++          }}
++        />
++      )}
+ 
+       <AddDeviceDialog open={pairOpen} onOpenChange={setPairOpen} />
+     </div>
+diff --git a/src/components/localdock/transfer-row.tsx b/src/components/localdock/transfer-row.tsx
+index 4454e3e..ea7ea7b 100644
+--- a/src/components/localdock/transfer-row.tsx
++++ b/src/components/localdock/transfer-row.tsx
+@@ -110,6 +110,11 @@ export function TransferRow({
+                     {item.etaSec !== null && (
+                       <span> · ETA {formatEta(item.etaSec)}</span>
+                     )}
++                    {(item.connections ?? 0) > 1 && (
++                      <span className="font-semibold text-primary">
++                        {" "}· {item.connections} links
++                      </span>
++                    )}
+                   </>
+                 )}
+                 {queued && "Waiting in queue…"}
+diff --git a/src/lib/localdock/client/api.ts b/src/lib/localdock/client/api.ts
+index 5762046..62a5849 100644
+--- a/src/lib/localdock/client/api.ts
++++ b/src/lib/localdock/client/api.ts
+@@ -183,6 +183,11 @@ export const Api = {
+     homeDirRel?: string;
+     /** Absolute OS path from the native dialog (desktop build only). */
+     absPath?: string;
++    /**
++     * Companion-device flow: create the share inside the server-managed
++     * "From Devices" area; the caller uploads the content right after.
++     */
++    viaUpload?: boolean;
+     access: "read" | "readwrite";
+     guestEnabled: boolean;
+   }) =>
+diff --git a/src/lib/localdock/client/device-folder.ts b/src/lib/localdock/client/device-folder.ts
+new file mode 100644
+index 0000000..3a49b39
+--- /dev/null
++++ b/src/lib/localdock/client/device-folder.ts
+@@ -0,0 +1,125 @@
++"use client";
++
++/**
++ * LocalDock — pick a folder FROM THIS DEVICE (browser-native).
++ *
++ * Uses the classic `<input webkitdirectory>` picker, which every modern
++ * browser supports, and maps the selection into upload-ready entries:
++ *
++ *   webkitRelativePath "Vacation/beach/day1.jpg"
++ *     → rootName "Vacation", relDir "beach", file day1.jpg
++ *
++ * Hidden system junk (.DS_Store, Thumbs.db, desktop.ini, __MACOSX, dotfiles)
++ * is filtered so shared folders stay clean.
++ */
++
++export interface DeviceFileEntry {
++  file: File;
++  /** Directory inside the picked folder, with the root name stripped ("" = root). */
++  relDir: string;
++}
++
++export interface DeviceFolderPick {
++  /** Name of the folder the user picked ("" when the browser gives no paths). */
++  rootName: string;
++  entries: DeviceFileEntry[];
++  /** Hidden system files that were filtered out. */
++  skipped: number;
++}
++
++const JUNK_FILES = new Set(["thumbs.db", "desktop.ini", ".ds_store", "autorun.inf", "dumpstack.log"]);
++
++function isJunkSegment(segment: string): boolean {
++  const lower = segment.toLowerCase();
++  if (!lower) return true;
++  if (lower.startsWith(".")) return true;
++  if (JUNK_FILES.has(lower)) return true;
++  if (lower === "__macosx") return true;
++  return false;
++}
++
++/** True when the file is hidden system junk that should never upload. */
++export function isJunkFileName(name: string): boolean {
++  return isJunkSegment(name);
++}
++
++/**
++ * Open the device's native folder picker and resolve with the picked tree.
++ * Resolves `null` when the user cancels (or picks nothing).
++ */
++export function pickDeviceFolder(): Promise<DeviceFolderPick | null> {
++  return new Promise((resolve) => {
++    if (typeof document === "undefined") {
++      resolve(null);
++      return;
++    }
++    const input = document.createElement("input");
++    input.type = "file";
++    input.multiple = true;
++    input.setAttribute("webkitdirectory", "");
++    input.setAttribute("directory", "");
++    input.style.position = "fixed";
++    input.style.left = "-9999px";
++    input.style.top = "0";
++    input.style.opacity = "0";
++    document.body.appendChild(input);
++
++    let settled = false;
++    const finish = (value: DeviceFolderPick | null) => {
++      if (settled) return;
++      settled = true;
++      window.removeEventListener("focus", onFocus);
++      input.remove();
++      resolve(value);
++    };
++
++    const onChange = () => {
++      const files = Array.from(input.files ?? []);
++      if (files.length === 0) {
++        finish(null);
++        return;
++      }
++      let rootName = "";
++      const entries: DeviceFileEntry[] = [];
++      let skipped = 0;
++      for (const file of files) {
++        const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath || "";
++        const segs = rel ? rel.split("/") : [file.name];
++        if (segs.some(isJunkSegment)) {
++          skipped++;
++          continue;
++        }
++        if (!rootName && segs.length > 1) rootName = segs[0];
++        const dirs = segs.slice(0, -1);
++        // strip the picked folder's own name — the destination provides it
++        const relDir =
++          rootName && dirs[0] === rootName ? dirs.slice(1).join("/") : dirs.join("/");
++        entries.push({ file, relDir });
++      }
++      if (entries.length === 0) {
++        finish(null);
++        return;
++      }
++      finish({ rootName, entries, skipped });
++    };
++
++    // Cancel detection: the OS picker holds focus; when the window regains
++    // focus with nothing selected, treat it as canceled.
++    const onFocus = () => {
++      window.setTimeout(() => {
++        if (!input.files || input.files.length === 0) finish(null);
++      }, 400);
++    };
++
++    input.addEventListener("change", onChange, { once: true });
++    window.addEventListener("focus", onFocus);
++    input.click();
++  });
++}
++
++/** "Videos" + "sub/dir" → "Videos/sub/dir" (nest an uploaded tree inside a path). */
++export function joinDirPath(base: string, relDir: string): string {
++  const clean = relDir.replace(/^\/+|\/+$/g, "");
++  if (!clean) return base;
++  return base ? `${base.replace(/\/+$/, "")}/${clean}` : clean;
++}
+diff --git a/src/lib/localdock/client/host.ts b/src/lib/localdock/client/host.ts
+new file mode 100644
+index 0000000..75d31f7
+--- /dev/null
++++ b/src/lib/localdock/client/host.ts
+@@ -0,0 +1,35 @@
++"use client";
++
++/**
++ * LocalDock — host vs. companion-device detection.
++ *
++ * "Select folder" flows must behave differently depending on WHERE the
++ * browser runs:
++ *  - On the host machine (localhost, or the Tauri desktop shell): the app may
++ *    browse the computer's real drives — those folders are local to the
++ *    server, so sharing them directly is free and instant.
++ *  - On any other device (phone / laptop over LAN): browsing the server's
++ *    drives is wrong and confusing — the user wants to pick folders from
++ *    THEIR OWN device and upload them to the computer.
++ *
++ * Detection is hostname-based: only the machine running the server resolves
++ * "localhost" to the server itself. A phone visiting http://192.168.1.3:3000
++ * sees the LAN IP as hostname, so it is correctly treated as a companion
++ * device. The desktop (Tauri) shell always counts as the host.
++ */
++export function isHostMachine(): boolean {
++  if (typeof window === "undefined") return true; // SSR: no UI depends on it
++  const host = window.location.hostname.toLowerCase();
++  if (
++    host === "localhost" ||
++    host === "127.0.0.1" ||
++    host === "::1" ||
++    host === "[::1]" ||
++    host.endsWith(".localhost")
++  ) {
++    return true;
++  }
++  // Desktop shell (Tauri) is always the host, whatever URL it loads from.
++  const w = window as unknown as Record<string, unknown>;
++  return !!(w.__TAURI_INTERNALS__ || w.__TAURI__ || w.__LOCALDOCK_DESKTOP__);
++}
+diff --git a/src/lib/localdock/client/transfer-engine.ts b/src/lib/localdock/client/transfer-engine.ts
+index 16624e0..10dbd8a 100644
+--- a/src/lib/localdock/client/transfer-engine.ts
++++ b/src/lib/localdock/client/transfer-engine.ts
+@@ -22,6 +22,21 @@ const CHUNK_SIZE = 4 * 1024 * 1024;
+ const MAX_PARALLEL = 2;
+ const MAX_AUTO_RETRIES = 4;
+ const PERSIST_KEY = "localdock.transfers.v2";
++/** Parallel chunk PUTs per upload (keeps the pipe full on Wi-Fi). */
++const UPLOAD_PARALLEL = 3;
++/** IDM-style parallel range connections per download. */
++const DL_MAX_CONNECTIONS = 4;
++
++/**
++ * Minimal structural type for FileSystemWritableFileStream — avoids lib.dom
++ * variance issues while keeping full type safety at the call sites.
++ */
++interface WritableLike {
++  write(data: Blob | BufferSource | string): Promise<void>;
++  seek(position: number): Promise<void>;
++  close(): Promise<void>;
++  abort?(reason?: unknown): Promise<void>;
++}
+ 
+ interface PersistedTransfer {
+   id: string;
+@@ -110,6 +125,50 @@ class Speedometer {
+   }
+ }
+ 
++/* ------------------------------------------------------------------ */
++/* Parallel download planning (IDM-style segmented engine)             */
++/* ------------------------------------------------------------------ */
++
++interface DlPlan {
++  segSize: number;
++  count: number;
++  workers: number;
++}
++
++/**
++ * Split the remaining byte range into segments for parallel downloading.
++ * Several connections keep the TCP pipeline full — a single Wi-Fi stream
++ * often stalls, which is exactly the "slow & choppy" effect.
++ */
++function planDownload(total: number, from: number): DlPlan {
++  const remaining = Math.max(0, total - from);
++  if (remaining <= 8 * 1024 * 1024) {
++    return { segSize: Math.max(1, remaining), count: 1, workers: 1 };
++  }
++  const connections =
++    remaining >= 64 * 1024 * 1024 ? DL_MAX_CONNECTIONS : remaining >= 16 * 1024 * 1024 ? 3 : 2;
++  // ~6 segments per connection so fast workers never starve; bounded size.
++  let segSize = Math.ceil(remaining / (connections * 6));
++  segSize = Math.min(Math.max(segSize, 2 * 1024 * 1024), 16 * 1024 * 1024);
++  const count = Math.ceil(remaining / segSize);
++  return { segSize, count, workers: Math.min(connections, count) };
++}
++
++function downloadUrlOf(item: TransferItem): string {
++  return `/api/shares/${item.shareId}/download?path=${encodeURIComponent(item.path)}`;
++}
++
++function saveBlob(blob: Blob, filename: string) {
++  const url = URL.createObjectURL(blob);
++  const a = document.createElement("a");
++  a.href = url;
++  a.download = filename;
++  document.body.appendChild(a);
++  a.click();
++  a.remove();
++  setTimeout(() => URL.revokeObjectURL(url), 30_000);
++}
++
+ /* ------------------------------------------------------------------ */
+ /* IndexedDB handle storage (cross-reload download resume)             */
+ /* ------------------------------------------------------------------ */
+@@ -171,6 +230,17 @@ class TransferEngine {
+     (info: { shareId: string; dirPath: string; name: string }) => void
+   >();
+ 
++  /* Download runtime state — session-scoped, never persisted:
++   *  - dlSegments: finished in-memory segments (blob path, survives pause/retry)
++   *  - dlPlans: the segment plan a pause/resume must stick to
++   *  - dlWriters: the ONE open disk writer per active streaming download
++   *  - dlWriting: whether the ordered flusher is mid-write (settle signal)
++   */
++  private dlSegments = new Map<string, Map<number, Blob>>();
++  private dlPlans = new Map<string, DlPlan & { base: number }>();
++  private dlWriters = new Map<string, { writable: WritableLike; writePos: number }>();
++  private dlWriting = new Map<string, boolean>();
++
+   /**
+    * Subscribe to upload completions — used by the file browser to refresh the
+    * open folder the moment a file lands on disk (no manual re-entry needed).
+@@ -201,11 +271,17 @@ class TransferEngine {
+    * the actual transfer.
+    */
+   private reportActivity(
+-    item: TransferItem,
++    itemOrId: TransferItem | string,
+     status: "active" | "done" | "failed" | "canceled" = "active",
+     force = false
+   ) {
+     if (typeof window === "undefined") return;
++    const id = typeof itemOrId === "string" ? itemOrId : itemOrId.id;
++    // Read the FRESH item from the store — the closure reference goes stale
++    // after the first patch(), which used to report outdated progress to
++    // the other devices.
++    const item = this.items.find((i) => i.id === id);
++    if (!item) return;
+     const now = Date.now();
+     if (!force) {
+       const last = this.lastActivityReport.get(item.id) ?? 0;
+@@ -227,11 +303,27 @@ class TransferEngine {
+     this.booted = true;
+     void this.restore();
+     window.addEventListener("online", () => this.retryInterrupted());
++    window.addEventListener("pagehide", () => this.commitWriters());
+     document.addEventListener("visibilitychange", () => {
+       if (document.visibilityState === "visible") this.retryInterrupted();
+     });
+   }
+ 
++  /**
++   * Commit open download writers (swap file → real file) so a reload
++   * resumes from real disk state instead of re-downloading the whole run.
++   */
++  private commitWriters() {
++    for (const [id, w] of this.dlWriters) {
++      this.dlWriters.delete(id);
++      try {
++        void w.writable.close().catch(() => undefined);
++      } catch {
++        /* page is going away */
++      }
++    }
++  }
++
+   get items() {
+     return useTransfers.getState().items;
+   }
+@@ -355,6 +447,19 @@ class TransferEngine {
+       await Api.uploadCancel(item.uploadId).catch(() => undefined);
+     }
+     if (item.kind === "download") {
++      const writer = this.dlWriters.get(id);
++      if (writer) {
++        this.dlWriters.delete(id);
++        try {
++          // abort() discards the swap file — nothing partial is committed
++          if (writer.writable.abort) await writer.writable.abort();
++          else await writer.writable.close();
++        } catch {
++          /* already closed */
++        }
++      }
++      this.dlSegments.delete(id);
++      this.dlPlans.delete(id);
+       await idb.del(id);
+       this.reportActivity(item, "canceled", true); // vanish instantly elsewhere
+     }
+@@ -491,6 +596,8 @@ class TransferEngine {
+ 
+     const speedo = this.speedo(item.id);
+ 
++    // Parallel chunk pipeline: N workers pull from the missing-chunks queue.
++    // Same philosophy as the parallel download engine — keep the pipe full.
+     let pass = 0;
+     for (;;) {
+       if (!this.stillActive(item.id)) return;
+@@ -498,52 +605,68 @@ class TransferEngine {
+       if (pass > item.totalChunks + 6) {
+         throw makeApiError(0, "stalled", "The upload stalled and could not finish.");
+       }
+-      // find next missing chunk
+-      let index = -1;
++      const missing: number[] = [];
+       for (let i = 0; i < item.totalChunks; i++) {
+-        if (!received.has(i)) {
+-          index = i;
+-          break;
+-        }
++        if (!received.has(i)) missing.push(i);
+       }
+-      if (index === -1) break; // all chunks received
+-
+-      const start = index * item.chunkSize;
+-      const end = Math.min(file.size, start + item.chunkSize);
+-      const blob = file.slice(start, end);
+-
+-      await this.withRetry(item, async () => {
+-        const res = await fetch(
+-          `/api/upload/chunk?uploadId=${encodeURIComponent(uploadId!)}&index=${index}`,
+-          {
+-            method: "PUT",
+-            body: blob,
+-            headers: transferHeaders({ "Content-Type": "application/octet-stream" }),
+-            signal: item.controller?.signal,
++      if (missing.length === 0) break;
++
++      let cursor = 0;
++      let workers = 0;
++      const runWorker = async (): Promise<void> => {
++        workers++;
++        useTransfers.getState().patch(item.id, { connections: Math.max(1, workers) });
++        try {
++          for (;;) {
++            if (!this.stillActive(item.id)) return;
++            const my = cursor++;
++            if (my >= missing.length) return;
++            const index = missing[my];
++            const start = index * item.chunkSize;
++            const end = Math.min(file.size, start + item.chunkSize);
++            const blob = file.slice(start, end);
++
++            await this.withRetry(item, async () => {
++              const res = await fetch(
++                `/api/upload/chunk?uploadId=${encodeURIComponent(uploadId!)}&index=${index}`,
++                {
++                  method: "PUT",
++                  body: blob,
++                  headers: transferHeaders({ "Content-Type": "application/octet-stream" }),
++                  signal: item.controller?.signal,
++                }
++              );
++              if (!res.ok) {
++                const body = (await res.json().catch(() => null)) as
++                  | { error?: { code?: string; message?: string } }
++                  | null;
++                throw makeApiError(
++                  res.status,
++                  body?.error?.code ?? `http-${res.status}`,
++                  body?.error?.message ?? "A chunk failed to upload."
++                );
++              }
++              received.add(index);
++              speedo.push(blob.size);
++              const transferred = bytesOf(received);
++              const bps = speedo.bps;
++              useTransfers.getState().patch(item.id, {
++                transferred: Math.min(transferred, item.size),
++                speedBps: bps,
++                etaSec: bps > 0 ? (item.size - transferred) / bps : null,
++                receivedChunks: new Set(received),
++              });
++            });
++            this.persistThrottled();
+           }
+-        );
+-        if (!res.ok) {
+-          const body = (await res.json().catch(() => null)) as
+-            | { error?: { code?: string; message?: string } }
+-            | null;
+-          throw makeApiError(
+-            res.status,
+-            body?.error?.code ?? `http-${res.status}`,
+-            body?.error?.message ?? "A chunk failed to upload."
+-          );
++        } finally {
++          workers--;
++          useTransfers.getState().patch(item.id, { connections: Math.max(0, workers) });
+         }
+-        received.add(index);
+-        speedo.push(blob.size);
+-        const transferred = bytesOf(received);
+-        const bps = speedo.bps;
+-        useTransfers.getState().patch(item.id, {
+-          transferred: Math.min(transferred, item.size),
+-          speedBps: bps,
+-          etaSec: bps > 0 ? (item.size - transferred) / bps : null,
+-          receivedChunks: new Set(received),
+-        });
+-      });
+-      this.persistThrottled();
++      };
++      await Promise.all(
++        Array.from({ length: Math.min(UPLOAD_PARALLEL, missing.length) }, () => runWorker())
++      );
+     }
+ 
+     if (!this.stillActive(item.id)) return;
+@@ -593,22 +716,138 @@ class TransferEngine {
+     });
+   }
+ 
+-  /* ---------- download runner ---------- */
++  /* ---------- download runner (IDM-style parallel segments) ---------- */
+ 
++  /**
++   * Parallel segmented downloads:
++   *  - Desktop (File System Access API): up to 4 range connections stream
++   *    segments into ONE open writable; an ordered flusher writes them to
++   *    disk contiguously. The old code re-opened createWritable() for every
++   *    4 MB chunk, forcing the browser to copy the whole file into a swap
++   *    file per chunk (O(n²) copying) — the main reason big downloads were
++   *    slow and choppy.
++   *  - Everywhere else: segments land in memory and assemble into a Blob.
++   * Both paths keep pause/resume and the cross-device live heartbeat.
++   */
+   private async runDownload(item: TransferItem) {
+     const speedo = this.speedo(item.id);
+     this.reportActivity(item, "active", true); // tell the other devices
++
++    if (item.size <= 0) {
++      saveBlob(new Blob([]), item.name);
++      useTransfers.getState().patch(item.id, {
++        status: "completed",
++        transferred: 0,
++        speedBps: 0,
++        etaSec: null,
++        completedAt: Date.now(),
++        connections: 0,
++      });
++      this.reportActivity(item, "done", true);
++      this.persist();
++      return;
++    }
++
+     const canStream =
+       typeof window !== "undefined" &&
+       "showSaveFilePicker" in window &&
+       item.size > 8 * 1024 * 1024;
+ 
+-    if (!canStream) {
+-      await this.downloadToBlob(item, speedo);
++    if (canStream) {
++      await this.downloadToDisk(item, speedo);
+       return;
+     }
++    await this.downloadToBlob(item, speedo);
++  }
++
++  /**
++   * Shared segment scheduler: N parallel workers each claim the next
++   * byte-range segment from `indices` and deliver it to `onSegment`.
++   * Retries live inside each segment; abort (pause/cancel) kills all.
++   */
++  private async runSegments(
++    item: TransferItem,
++    opts: {
++      url: string;
++      indices: number[];
++      segSize: number;
++      base: number;
++      workers: number;
++      speedo: Speedometer;
++      onSegment: (index: number, parts: BlobPart[]) => Promise<void>;
++      onBytes: (n: number) => void;
++    }
++  ): Promise<void> {
++    const { url, speedo, onSegment, onBytes } = opts;
++    const queue = opts.indices;
++    let cursor = 0;
++    let workers = 0;
++
++    const runWorker = async (): Promise<void> => {
++      workers++;
++      useTransfers.getState().patch(item.id, { connections: Math.max(1, workers) });
++      try {
++        for (;;) {
++          if (!this.stillActive(item.id)) return;
++          const my = cursor++;
++          if (my >= queue.length) return;
++          const index = queue[my];
++          const start = opts.base + index * opts.segSize;
++          const end = Math.min(item.size, start + opts.segSize) - 1;
++          await this.withRetry(item, async () => {
++            const res = await fetch(url, {
++              headers: transferHeaders({ Range: `bytes=${start}-${end}` }),
++              signal: item.controller?.signal,
++            });
++            // A plain 200 (range ignored) is only acceptable when this
++            // "segment" is actually the whole file.
++            if (
++              res.status !== 206 &&
++              !(res.status === 200 && start === 0 && end === item.size - 1)
++            ) {
++              const body = (await res.json().catch(() => null)) as
++                | { error?: { message?: string } }
++                | null;
++              throw makeApiError(
++                res.status,
++                `http-${res.status}`,
++                body?.error?.message ?? "Download failed."
++              );
++            }
++            const reader = res.body!.getReader();
++            const parts: BlobPart[] = [];
++            for (;;) {
++              const { done, value } = await reader.read();
++              if (done) break;
++              parts.push(value as unknown as BlobPart);
++              speedo.push(value.byteLength);
++              onBytes(value.byteLength);
++            }
++            const expected = end - start + 1;
++            const got = parts.reduce(
++              (a, p) => a + (p as ArrayBufferView).byteLength,
++              0
++            );
++            if (got !== expected) {
++              throw makeApiError(0, "network", "Connection dropped mid-segment — retrying.");
++            }
++            await onSegment(index, parts);
++          });
++        }
++      } finally {
++        workers--;
++        useTransfers.getState().patch(item.id, { connections: Math.max(0, workers) });
++      }
++    };
++
++    await Promise.all(Array.from({ length: Math.max(1, opts.workers) }, () => runWorker()));
++  }
++
++  /* ----- sink 1: streaming to real disk (File System Access API) ----- */
++
++  private async downloadToDisk(item: TransferItem, speedo: Speedometer) {
++    const url = downloadUrlOf(item);
+ 
+-    // Streaming to disk with pause/resume + cross-reload resume.
+     let handle: FileSystemFileHandle | null =
+       (await idb.get<FileSystemFileHandle>(item.id)) ?? null;
+ 
+@@ -633,128 +872,224 @@ class TransferEngine {
+       return;
+     }
+ 
+-    // Resume point: current size on disk
+-    let offset = 0;
+-    try {
+-      const file = await handle.getFile();
+-      offset = Math.min(file.size, item.size);
+-    } catch {
+-      offset = 0;
++    // Settle any writes from a previous run of this item before reading the
++    // resume point (pause keeps the writer open — its tail writes may still
++    // be flushing).
++    let settleGuard = 0;
++    while (this.dlWriting.get(item.id) && settleGuard < 400) {
++      await new Promise((r) => setTimeout(r, 5));
++      settleGuard++;
++    }
++
++    // ONE writable for the whole run — kept open across pause/resume within
++    // this page session. (Reopening per chunk used to force the browser to
++    // copy the entire file into a fresh swap each time.)
++    let writer = this.dlWriters.get(item.id);
++    if (!writer) {
++      let offset = 0;
++      try {
++        const file = await handle.getFile();
++        offset = Math.min(file.size, item.size);
++      } catch {
++        offset = 0;
++      }
++      const writable = await (
++        handle as FileSystemFileHandle & {
++          createWritable: (opts?: { keepExistingData?: boolean }) => Promise<WritableLike>;
++        }
++      ).createWritable({ keepExistingData: true });
++      await writable.seek(offset);
++      writer = { writable, writePos: offset };
++      this.dlWriters.set(item.id, writer);
+     }
+-    if (offset >= item.size && item.size > 0) {
++
++    if (writer.writePos >= item.size && item.size > 0) {
++      // everything is already on disk (e.g. resumed after a finished run)
++      try {
++        await writer.writable.close();
++      } catch {
++        /* already closed */
++      }
++      this.dlWriters.delete(item.id);
+       useTransfers.getState().patch(item.id, {
+         status: "completed",
+         transferred: item.size,
+         completedAt: Date.now(),
+         speedBps: 0,
+         etaSec: null,
++        connections: 0,
+       });
+       await idb.del(item.id);
+       this.reportActivity(item, "done", true);
+       this.persist();
+       return;
+     }
+-    useTransfers.getState().patch(item.id, { transferred: offset });
++    useTransfers.getState().patch(item.id, {
++      transferred: writer.writePos,
++      connections: 0,
++    });
+ 
+-    while (offset < item.size) {
+-      if (!this.stillActive(item.id)) return;
+-      const end = Math.min(item.size, offset + CHUNK_SIZE) - 1;
+-      await this.withRetry(item, async () => {
+-        const url = `/api/shares/${item.shareId}/download?path=${encodeURIComponent(item.path)}`;
+-        const res = await fetch(url, {
+-          headers: transferHeaders({ Range: `bytes=${offset}-${end}` }),
+-          signal: item.controller?.signal,
+-        });
+-        if (!res.ok && res.status !== 206) {
+-          const body = (await res.json().catch(() => null)) as
+-            | { error?: { message?: string } }
+-            | null;
+-          throw makeApiError(res.status, `http-${res.status}`, body?.error?.message ?? "Download failed.");
+-        }
+-        const writable = await (
+-          handle as FileSystemFileHandle & {
+-            createWritable: (opts?: { keepExistingData?: boolean }) => Promise<FileSystemWritableFileStream>;
+-          }
+-        ).createWritable({ keepExistingData: true });
+-        await writable.seek(offset);
+-        const reader = res.body!.getReader();
++    const { segSize, count, workers } = planDownload(item.size, writer.writePos);
++    const base = writer.writePos;
++
++    // Ordered flusher: segments finish out of order; only a contiguous run
++    // is written, so the disk file stays valid & resumable at all times.
++    const pending = new Map<number, BlobPart[]>();
++    let nextToWrite = 0;
++    let writeError: Error | null = null;
++
++    const pumpWrites = async (): Promise<void> => {
++      if (this.dlWriting.get(item.id) || !writer) return;
++      this.dlWriting.set(item.id, true);
++      try {
+         for (;;) {
+-          const { done, value } = await reader.read();
+-          if (done) break;
+-          await writable.write(value);
+-          offset += value.byteLength;
+-          speedo.push(value.byteLength);
+-          const bps = speedo.bps;
+-          useTransfers.getState().patch(item.id, {
+-            transferred: offset,
+-            speedBps: bps,
+-            etaSec: bps > 0 ? (item.size - offset) / bps : null,
+-          });
+-          this.reportActivity(item); // throttled heartbeat for other devices
++          const parts = pending.get(nextToWrite);
++          if (!parts || !writer) break;
++          pending.delete(nextToWrite);
++          for (const part of parts) await writer.writable.write(part);
++          nextToWrite++;
++          writer.writePos += parts.reduce(
++            (a, p) => a + (p as ArrayBufferView).byteLength,
++            0
++          );
++          useTransfers.getState().patch(item.id, { transferred: writer.writePos });
+         }
+-        await writable.close();
+-      });
+-      this.persistThrottled();
++      } catch (err) {
++        writeError = err as Error;
++      } finally {
++        this.dlWriting.set(item.id, false);
++      }
++    };
++
++    await this.runSegments(item, {
++      url,
++      indices: Array.from({ length: count }, (_, i) => i),
++      segSize,
++      base,
++      workers,
++      speedo,
++      onBytes: () => {
++        this.reportActivity(item); // throttled heartbeat for other devices
++      },
++      onSegment: async (index, parts) => {
++        pending.set(index, parts);
++        void pumpWrites();
++        // wait until THIS segment actually reached the disk (contiguity)
++        while (nextToWrite <= index && !writeError && this.stillActive(item.id)) {
++          await new Promise((r) => setTimeout(r, 5));
++        }
++        if (writeError) throw writeError;
++        if (!this.stillActive(item.id)) {
++          throw makeApiError(0, "aborted", "Transfer stopped.");
++        }
++      },
++    });
++
++    if (!this.stillActive(item.id)) {
++      // Paused or canceled mid-flight — deliberately leave the writer open
++      // in dlWriters: resume() reuses it (no re-copy, no progress loss) and
++      // cancel() aborts & discards it.
++      return;
+     }
+ 
++    // Drain the tail writes, then commit the file.
++    let drainGuard = 0;
++    while (this.dlWriting.get(item.id) && drainGuard < 2400) {
++      await new Promise((r) => setTimeout(r, 5));
++      drainGuard++;
++    }
++    if (writeError) throw writeError;
++    if (nextToWrite < count) {
++      throw makeApiError(0, "network", "Download interrupted — retrying.");
++    }
++
++    await writer.writable.close();
++    this.dlWriters.delete(item.id);
++
+     useTransfers.getState().patch(item.id, {
+       status: "completed",
+       transferred: item.size,
+       speedBps: 0,
+       etaSec: null,
+       completedAt: Date.now(),
++      connections: 0,
+     });
+     await idb.del(item.id);
+     this.reportActivity(item, "done", true);
+     this.persist();
+   }
+ 
+-  private async downloadToBlob(item: TransferItem, speedo: Speedometer) {
+-    const url = `/api/shares/${item.shareId}/download?path=${encodeURIComponent(item.path)}`;
+-    const headers = transferHeaders(
+-      item.transferred > 0 ? { Range: `bytes=${item.transferred}-` } : {}
+-    );
+-    this.reportActivity(item, "active", true);
++  /* ----- sink 2: in-memory segments → Blob (mobile & other browsers) ----- */
+ 
+-    const res = await fetch(url, {
+-      headers,
+-      signal: item.controller?.signal,
+-    });
+-    if (!res.ok && res.status !== 206) {
+-      const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+-      throw makeApiError(res.status, `http-${res.status}`, body?.error?.message ?? "Download failed.");
++  private async downloadToBlob(item: TransferItem, speedo: Speedometer) {
++    const url = downloadUrlOf(item);
++
++    // Finished segments survive pause/retry in memory, so a network blip
++    // never re-downloads them. (The old single-stream "resume" actually
++    // produced corrupt files after a drop — this replaces it.)
++    const segs = this.dlSegments.get(item.id) ?? new Map<number, Blob>();
++    this.dlSegments.set(item.id, segs);
++    let plan = this.dlPlans.get(item.id);
++    if (!plan) {
++      plan = { ...planDownload(item.size, 0), base: 0 };
++      this.dlPlans.set(item.id, plan);
+     }
+ 
+-    const total = Number(res.headers.get("Content-Length") ?? 0) + (res.status === 206 ? item.transferred : 0);
+-    const reader = res.body!.getReader();
+-    const chunks: BlobPart[] = [];
+-    let received = res.status === 206 ? item.transferred : 0;
+-    for (;;) {
+-      const { done, value } = await reader.read();
+-      if (done) break;
+-      chunks.push(value);
+-      received += value.byteLength;
+-      speedo.push(value.byteLength);
+-      const bps = speedo.bps;
+-      useTransfers.getState().patch(item.id, {
+-        transferred: received,
+-        speedBps: bps,
+-        etaSec: bps > 0 ? Math.max(0, item.size - received) / bps : null,
+-      });
+-      this.reportActivity(item); // throttled heartbeat for other devices
++    let committed = 0;
++    const missing: number[] = [];
++    for (let i = 0; i < plan.count; i++) {
++      const have = segs.get(i);
++      if (have) committed += have.size;
++      else missing.push(i);
++    }
++    if (missing.length === 0) {
++      this.finishBlobDownload(item, plan.count, segs);
++      return;
+     }
++    useTransfers.getState().patch(item.id, {
++      transferred: committed,
++      connections: 0,
++    });
++
++    let received = committed;
++    await this.runSegments(item, {
++      url,
++      indices: missing,
++      segSize: plan.segSize,
++      base: plan.base,
++      workers: Math.min(plan.workers, missing.length),
++      speedo,
++      onBytes: (n) => {
++        received += n;
++        const bps = speedo.bps;
++        useTransfers.getState().patch(item.id, {
++          transferred: Math.min(received, item.size),
++          speedBps: bps,
++          etaSec: bps > 0 ? Math.max(0, item.size - received) / bps : null,
++        });
++        this.reportActivity(item); // throttled heartbeat for other devices
++      },
++      onSegment: async (index, parts) => {
++        segs.set(index, new Blob(parts));
++        this.persistThrottled();
++      },
++    });
+ 
+-    const finalBuffer = chunks as BlobPart[];
+-    const blob = new Blob(finalBuffer);
+-    const filename = item.name;
+-    const url2 = URL.createObjectURL(blob);
+-    const a = document.createElement("a");
+-    a.href = url2;
+-    a.download = filename;
+-    document.body.appendChild(a);
+-    a.click();
+-    a.remove();
+-    setTimeout(() => URL.revokeObjectURL(url2), 30_000);
++    this.finishBlobDownload(item, plan.count, segs);
++  }
++
++  private finishBlobDownload(item: TransferItem, count: number, segs: Map<number, Blob>) {
++    const ordered: Blob[] = [];
++    for (let i = 0; i < count; i++) {
++      const part = segs.get(i);
++      if (!part) {
++        throw makeApiError(0, "internal", "Download segments are incomplete.");
++      }
++      ordered.push(part);
++    }
++    saveBlob(new Blob(ordered), item.name);
++    this.dlSegments.delete(item.id);
++    this.dlPlans.delete(item.id);
+ 
+     useTransfers.getState().patch(item.id, {
+       status: "completed",
+@@ -762,8 +1097,8 @@ class TransferEngine {
+       speedBps: 0,
+       etaSec: null,
+       completedAt: Date.now(),
++      connections: 0,
+     });
+-    void total;
+     this.reportActivity(item, "done", true);
+     this.persist();
+   }
+diff --git a/src/lib/localdock/types.ts b/src/lib/localdock/types.ts
+index 996ddef..878470c 100644
+--- a/src/lib/localdock/types.ts
++++ b/src/lib/localdock/types.ts
+@@ -215,4 +215,9 @@ export interface TransferItem {
+   hashHex?: string;
+   /** Uploads restored from a previous page load: the file must be re-picked. */
+   needsFile?: boolean;
++  /**
++   * Live count of parallel connections this transfer is using (IDM-style
++   * chunked engine). Displayed as a badge; 0/undefined = single stream.
++   */
++  connections?: number;
+ }
+diff --git a/src/lib/localdock/uploads.ts b/src/lib/localdock/uploads.ts
+index 50b61ea..fbbd9e3 100644
+--- a/src/lib/localdock/uploads.ts
++++ b/src/lib/localdock/uploads.ts
+@@ -14,7 +14,7 @@
+ import crypto from "node:crypto";
+ import fsp from "node:fs/promises";
+ import path from "node:path";
+-import { UPLOADS_DIR } from "./store";
++import { UPLOADS_DIR, withLock } from "./store";
+ import { uniquifyPath, sanitizeUploadName } from "./paths";
+ import type { UploadSessionInfo } from "./types";
+ 
+@@ -171,36 +171,41 @@ export async function writeChunk(
+   index: number,
+   data: Buffer
+ ): Promise<{ received: number; totalChunks: number; chunkSize: number }> {
+-  const session = readSession(uploadId);
+-  if (!session || session.status !== "active") throw new Error("session-not-found");
+-  if (!Number.isInteger(index) || index < 0 || index >= session.totalChunks) {
+-    throw new Error("invalid-chunk-index");
+-  }
+-  const expectedLen =
+-    index === session.totalChunks - 1
+-      ? session.size - (session.totalChunks - 1) * session.chunkSize
+-      : session.chunkSize;
+-  if (data.length === 0 || data.length > session.chunkSize) {
+-    throw new Error("invalid-chunk-size");
+-  }
+-  if (session.size > 0 && expectedLen > 0 && data.length > expectedLen) {
+-    throw new Error("invalid-chunk-size");
+-  }
++  // Clients upload chunks in PARALLEL now — the session read-modify-write
++  // (received[] + metadata json) must be serialized or updates get lost,
++  // which would make completion report phantom missing chunks.
++  return withLock(`upload:${uploadId}`, async () => {
++    const session = readSession(uploadId);
++    if (!session || session.status !== "active") throw new Error("session-not-found");
++    if (!Number.isInteger(index) || index < 0 || index >= session.totalChunks) {
++      throw new Error("invalid-chunk-index");
++    }
++    const expectedLen =
++      index === session.totalChunks - 1
++        ? session.size - (session.totalChunks - 1) * session.chunkSize
++        : session.chunkSize;
++    if (data.length === 0 || data.length > session.chunkSize) {
++      throw new Error("invalid-chunk-size");
++    }
++    if (session.size > 0 && expectedLen > 0 && data.length > expectedLen) {
++      throw new Error("invalid-chunk-size");
++    }
+ 
+-  const fh = await fsp.open(partPath(uploadId), "r+");
+-  try {
+-    await fh.write(data, 0, data.length, index * session.chunkSize);
+-  } finally {
+-    await fh.close();
+-  }
++    const fh = await fsp.open(partPath(uploadId), "r+");
++    try {
++      await fh.write(data, 0, data.length, index * session.chunkSize);
++    } finally {
++      await fh.close();
++    }
+ 
+-  if (!session.received.includes(index)) session.received.push(index);
+-  await writeSession(session);
+-  return {
+-    received: session.received.length,
+-    totalChunks: session.totalChunks,
+-    chunkSize: session.chunkSize,
+-  };
++    if (!session.received.includes(index)) session.received.push(index);
++    await writeSession(session);
++    return {
++      received: session.received.length,
++      totalChunks: session.totalChunks,
++      chunkSize: session.chunkSize,
++    };
++  });
+ }
+ 
+ export async function statusOf(
+@@ -215,11 +220,12 @@ export async function completeUpload(
+   uploadId: string,
+   expectedSha256?: string
+ ): Promise<UploadSessionInfo> {
+-  const session = readSession(uploadId);
+-  if (!session || session.status !== "active") {
+-    if (session?.status === "completed") return toInfo(session);
+-    throw new Error("session-not-found");
+-  }
++  return withLock(`upload:${uploadId}`, async () => {
++    const session = readSession(uploadId);
++    if (!session || session.status !== "active") {
++      if (session?.status === "completed") return toInfo(session);
++      throw new Error("session-not-found");
++    }
+   const missing: number[] = [];
+   for (let i = 0; i < session.totalChunks; i++) {
+     if (!session.received.includes(i)) missing.push(i);
+@@ -272,6 +278,7 @@ export async function completeUpload(
+   session.sha256 = hex;
+   await writeSession(session);
+   return toInfo(session);
++  });
+ }
+ 
+ export async function cancelUpload(uploadId: string): Promise<boolean> {

@@ -9,6 +9,7 @@ import {
 } from "@/lib/localdock/registry";
 import { readJsonBody, requireOwner } from "@/lib/localdock/api-helpers";
 import { measureDir, resolveNativeFolder } from "@/lib/localdock/files";
+import { sanitizeName, uniquifyPath } from "@/lib/localdock/paths";
 import { HOME, SHARES_DIR } from "@/lib/localdock/store";
 import { resolveSafe } from "@/lib/localdock/paths";
 import type { ShareAccess } from "@/lib/localdock/types";
@@ -31,6 +32,12 @@ interface CreateBody {
    * only — rejected outright in web deployments).
    */
   absPath?: string;
+  /**
+   * Companion-device flow: the folder lives on the CALLING device, so the
+   * server creates an empty managed folder (Shares/From Devices/<name>) and
+   * the device uploads its content right after. No server path is needed.
+   */
+  viaUpload?: boolean;
   access?: ShareAccess;
   guestEnabled?: boolean;
 }
@@ -43,24 +50,33 @@ export async function POST(req: Request) {
     return jsonError(400, "bad-name", "Please give this folder a name.");
   }
 
-  const rawPath = (body.absPath || body.homeDirRel || "").trim();
-  if (!rawPath) {
-    return jsonError(400, "bad-path", "Please select or enter a folder path to share.");
-  }
-
   let rootAbs: string;
-  if (path.isAbsolute(rawPath)) {
-    const native = await resolveNativeFolder(rawPath);
-    if (!native.ok) return jsonError(400, native.code, native.message);
-    rootAbs = native.abs;
+  if (body.viaUpload) {
+    // Companion device: the content will be uploaded — create a clean,
+    // unique managed folder under Shares/From Devices.
+    const base = sanitizeName(body.name) ?? "Shared folder";
+    const fromDevices = path.join(SHARES_DIR, "From Devices");
+    rootAbs = uniquifyPath(fromDevices, base, true);
+    await fsp.mkdir(rootAbs, { recursive: true });
   } else {
-    const resolved = resolveSafe(SHARES_DIR, rawPath);
-    if (resolved.ok && resolved.abs) {
-      rootAbs = resolved.abs;
-    } else {
-      const native = await resolveNativeFolder(path.resolve(rawPath));
+    const rawPath = (body.absPath || body.homeDirRel || "").trim();
+    if (!rawPath) {
+      return jsonError(400, "bad-path", "Please select or enter a folder path to share.");
+    }
+
+    if (path.isAbsolute(rawPath)) {
+      const native = await resolveNativeFolder(rawPath);
       if (!native.ok) return jsonError(400, native.code, native.message);
       rootAbs = native.abs;
+    } else {
+      const resolved = resolveSafe(SHARES_DIR, rawPath);
+      if (resolved.ok && resolved.abs) {
+        rootAbs = resolved.abs;
+      } else {
+        const native = await resolveNativeFolder(path.resolve(rawPath));
+        if (!native.ok) return jsonError(400, native.code, native.message);
+        rootAbs = native.abs;
+      }
     }
   }
 
@@ -76,9 +92,15 @@ export async function POST(req: Request) {
     setShareStats(share.id, sizeBytes, itemCount)
   );
 
-  await logActivity("share.created", `Started sharing “${share.name}”`, {
-    access: share.access,
-    guest: share.guestEnabled,
-  });
+  await logActivity(
+    "share.created",
+    body.viaUpload
+      ? `Started sharing “${share.name}” — content uploading from a device`
+      : `Started sharing “${share.name}”`,
+    {
+      access: share.access,
+      guest: share.guestEnabled,
+    }
+  );
   return jsonOk({ share }, 201);
 }

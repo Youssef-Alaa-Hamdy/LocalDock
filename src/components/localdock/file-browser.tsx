@@ -15,6 +15,7 @@ import {
   useTransfers,
   selectDockItems,
 } from "@/lib/localdock/client/transfer-engine";
+import { pickDeviceFolder, joinDirPath } from "@/lib/localdock/client/device-folder";
 import {
   formatBytes,
   formatDateTime,
@@ -68,6 +69,7 @@ import {
   FileVideo,
   FileQuestion,
   FolderPlus,
+  FolderUp,
   Folder,
   Grid2X2,
   Image as ImageIcon,
@@ -425,6 +427,34 @@ export function FileBrowser({
     );
   };
 
+  /**
+   * Upload a whole FOLDER from this device (browser-native webkitdirectory
+   * picker). The tree keeps its structure — subfolders are recreated inside
+   * the current directory. Works for guests and the owner alike, on any
+   * device — the folder always comes from the device you're holding.
+   */
+  const uploadFolderFromDevice = async () => {
+    const pick = await pickDeviceFolder();
+    if (!pick || pick.entries.length === 0) return;
+    const base = pick.rootName
+      ? joinDirPath(path, pick.rootName)
+      : path;
+    for (const entry of pick.entries) {
+      transfers.enqueueUpload({
+        shareId,
+        shareName,
+        dirPath: joinDirPath(base, entry.relDir),
+        file: entry.file,
+      });
+    }
+    const total = pick.entries.reduce((a, e) => a + e.file.size, 0);
+    toast.success(
+      pick.entries.length === 1
+        ? `Uploading ${pick.entries[0].file.name}`
+        : `Uploading folder with ${pick.entries.length} files (${formatBytes(total)})`
+    );
+  };
+
   const createFolder = async () => {
     const name = newFolderName.trim();
     if (!name) return;
@@ -731,6 +761,16 @@ export function FileBrowser({
             <Button size="sm" className="h-9 rounded-xl px-2.5 sm:px-3" onClick={() => uploadRef.current?.click()}>
               <Upload className="size-4" />
               <span className="hidden sm:inline">Upload</span>
+            </Button>
+            <Button
+              size="icon"
+              variant="outline"
+              className="size-9 rounded-xl"
+              onClick={() => void uploadFolderFromDevice()}
+              aria-label="Upload folder from this device"
+              title="Upload folder from this device"
+            >
+              <FolderUp className="size-4" />
             </Button>
             <Button
               size="icon"

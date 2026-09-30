@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { isHostMachine } from "@/lib/localdock/client/host";
 
 interface DirEntry {
   name: string;
@@ -123,6 +124,11 @@ export function FolderBrowserDialog({
     return <FolderOpen className="size-4 shrink-0 text-primary" />;
   };
 
+  // Companion devices see the HOST computer's drives here. That is only
+  // intuitive on the machine running LocalDock — warn everyone else and
+  // point them to the device-upload flow.
+  const remoteDevice = !isHostMachine();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
@@ -132,6 +138,12 @@ export function FolderBrowserDialog({
         </DialogHeader>
 
         <div className="overflow-hidden rounded-2xl border border-border">
+          {remoteDevice && (
+            <p className="border-b border-border bg-warning/10 px-3 py-2 text-xs leading-relaxed text-warning-foreground">
+              These are the drives of the computer running LocalDock. To add folders from THIS
+              device, use “Add Folder” in Shares — it uploads from your device instead.
+            </p>
+          )}
           <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-3 py-2.5">
             <Button
               size="sm"

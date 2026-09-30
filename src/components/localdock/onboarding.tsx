@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { Api } from "@/lib/localdock/client/api";
+import { transfers } from "@/lib/localdock/client/transfer-engine";
+import { isHostMachine } from "@/lib/localdock/client/host";
+import { pickDeviceFolder } from "@/lib/localdock/client/device-folder";
 import { useRefresh } from "./data-hooks";
 import { LogoMark, StatusDot } from "./primitives";
 import { FolderBrowserDialog } from "./folder-browser-dialog";
@@ -34,7 +37,45 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
   const [addedShare, setAddedShare] = useState<string | null>(null);
   const [pairOpen, setPairOpen] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const [addingFromDevice, setAddingFromDevice] = useState(false);
   const refresh = useRefresh();
+  const host = isHostMachine();
+
+  /**
+   * Companion devices (phones / laptops over LAN): the first folder is
+   * picked from THIS device and uploaded — browsing the server's drives
+   * from here would be wrong and confusing.
+   */
+  const addFromDevice = async () => {
+    setAddingFromDevice(true);
+    try {
+      const pick = await pickDeviceFolder();
+      if (!pick || pick.entries.length === 0) return;
+      const name = pick.rootName || "My folder";
+      const res = await Api.createShare({
+        name,
+        access: "readwrite",
+        guestEnabled: true,
+        viaUpload: true,
+      });
+      for (const entry of pick.entries) {
+        transfers.enqueueUpload({
+          shareId: res.share.id,
+          shareName: res.share.name,
+          dirPath: entry.relDir,
+          file: entry.file,
+        });
+      }
+      setAddedShare(name);
+      refresh.refreshShares();
+      refresh.refreshSystem();
+      toast.success(`Uploading ${pick.entries.length} files from this device…`);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setAddingFromDevice(false);
+    }
+  };
 
   const finish = async () => {
     setFinishing(true);
@@ -135,7 +176,11 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
             <div className="rise">
               <StepHeader
                 title="Add your first folder"
-                desc="Pick a folder — it becomes available on your other devices instantly."
+                desc={
+                  host
+                    ? "Pick a folder — it becomes available on your other devices instantly."
+                    : "Pick a folder from this device — it uploads to the computer, then becomes available on your network."
+                }
                 step={2}
                 total={3}
               />
@@ -146,19 +191,35 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold">“{addedShare}” is being shared</p>
-                    <p className="text-xs text-muted-foreground">Available on your network now.</p>
+                    <p className="text-xs text-muted-foreground">
+                      {host ? "Available on your network now." : "Uploading from this device now."}
+                    </p>
                   </div>
                 </div>
               ) : (
                 <button
-                  onClick={() => setAddOpen(true)}
-                  className="card-lift mt-4 flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-border py-10 transition-colors hover:border-primary/50 hover:bg-accent/30"
+                  onClick={() => {
+                    if (host) setAddOpen(true);
+                    else void addFromDevice();
+                  }}
+                  disabled={addingFromDevice}
+                  className="card-lift mt-4 flex w-full flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-border py-10 transition-colors hover:border-primary/50 hover:bg-accent/30 disabled:opacity-60"
                 >
                   <span className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                     <FolderPlus className="size-6" strokeWidth={1.8} />
                   </span>
-                  <span className="text-sm font-semibold">Choose a folder to share</span>
-                  <span className="text-xs text-muted-foreground">Documents, photos, projects — anything</span>
+                  <span className="text-sm font-semibold">
+                    {addingFromDevice
+                      ? "Waiting for the folder picker…"
+                      : host
+                        ? "Choose a folder to share"
+                        : "Choose a folder from this device"}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {host
+                      ? "Documents, photos, projects — anything"
+                      : "It will upload to the computer over your local network"}
+                  </span>
                 </button>
               )}
               <div className="mt-6 flex gap-2">
@@ -218,26 +279,28 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
         </p>
       </div>
 
-      <FolderBrowserDialog
-        open={addOpen}
-        onOpenChange={setAddOpen}
-        mode="shares"
-        title="Add your first folder"
-        description="Pick a folder on this computer — or create a new one."
-        confirmLabel="Share this folder"
-        onSelect={async (rel) => {
-          try {
-            const clean = rel.replace(/[\\/]+$/, "");
-            const name = clean.split(/[\\/]/).filter(Boolean).pop() || "My folder";
-            await Api.createShare({ name, absPath: rel, access: "readwrite", guestEnabled: true });
-            setAddedShare(name);
-            refresh.refreshShares();
-            refresh.refreshSystem();
-          } catch (e) {
-            toast.error((e as Error).message);
-          }
-        }}
-      />
+      {host && (
+        <FolderBrowserDialog
+          open={addOpen}
+          onOpenChange={setAddOpen}
+          mode="shares"
+          title="Add your first folder"
+          description="Pick a folder on this computer — or create a new one."
+          confirmLabel="Share this folder"
+          onSelect={async (rel) => {
+            try {
+              const clean = rel.replace(/[\\/]+$/, "");
+              const name = clean.split(/[\\/]/).filter(Boolean).pop() || "My folder";
+              await Api.createShare({ name, absPath: rel, access: "readwrite", guestEnabled: true });
+              setAddedShare(name);
+              refresh.refreshShares();
+              refresh.refreshSystem();
+            } catch (e) {
+              toast.error((e as Error).message);
+            }
+          }}
+        />
+      )}
 
       <AddDeviceDialog open={pairOpen} onOpenChange={setPairOpen} />
     </div>
