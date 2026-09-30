@@ -47,6 +47,7 @@ export const ar: SameShape<typeof en> = {
   nav: {
     main: "التنقل الرئيسي",
     mobile: "التنقل",
+    more: "المزيد",
     dashboard: "لوحة التحكم",
     shares: "المشاركات",
     files: "الملفات",
@@ -54,6 +55,15 @@ export const ar: SameShape<typeof en> = {
     devices: "الأجهزة",
     websites: "المواقع",
     settings: "الإعدادات",
+  },
+
+  /** Compact labels for the mobile bottom bar (full nav.* labels stay in the sidebar). */
+  navShort: {
+    dashboard: "الرئيسية",
+    shares: "المشاركات",
+    files: "الملفات",
+    transfers: "التحويلات",
+    more: "المزيد",
   },
 
   status: {

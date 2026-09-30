@@ -44,7 +44,7 @@ export function TransferDock() {
       exit={{ opacity: 0, y: 24 }}
       transition={{ type: "spring", stiffness: 320, damping: 30 }}
       className={cn(
-        "fixed inset-x-3 bottom-3 z-40 mx-auto max-w-xl overflow-hidden rounded-2xl border border-border bg-card/95 shadow-pop backdrop-blur-xl lg:inset-x-auto lg:end-6 lg:bottom-6 lg:mx-0",
+        "fixed inset-x-3 bottom-[calc(4.75rem_+_env(safe-area-inset-bottom))] z-40 mx-auto max-w-xl overflow-hidden rounded-2xl border border-border bg-card/95 shadow-pop backdrop-blur-xl lg:inset-x-auto lg:end-6 lg:bottom-6 lg:mx-0",
         !connected && "border-warning/50"
       )}
       role="region"

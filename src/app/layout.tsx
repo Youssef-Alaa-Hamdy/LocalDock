@@ -1,5 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Cairo, Geist, Geist_Mono } from "next/font/google";
+import {
+  Cairo,
+  Geist,
+  Geist_Mono,
+  Inter,
+  Noto_Sans_SC,
+  Noto_Sans_JP,
+  Noto_Sans_Devanagari,
+} from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 import { SonnerToaster } from "@/components/localdock/sonner-toaster";
@@ -25,6 +33,36 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Russian companion — Inter's Cyrillic is the gold standard for UI text.
+// Spliced into the sans stack by globals.css while <html lang="ru">.
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin", "cyrillic", "cyrillic-ext"],
+  display: "swap",
+});
+
+// CJK companions — Noto Sans is the professional UI standard for both.
+// Self-hosted + unicode-range sliced by next/font: browsers only download
+// the glyph slices a page actually renders.
+const notoSc = Noto_Sans_SC({
+  variable: "--font-noto-sc",
+  weight: ["400", "500", "700"],
+  display: "swap",
+});
+
+const notoJp = Noto_Sans_JP({
+  variable: "--font-noto-jp",
+  weight: ["400", "500", "700"],
+  display: "swap",
+});
+
+// Hindi companion — full Devanagari coverage with Latin included.
+const notoDeva = Noto_Sans_Devanagari({
+  variable: "--font-noto-deva",
+  weight: ["400", "500", "700"],
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "LocalDock — Your Personal Local Cloud",
   description:
@@ -45,6 +83,9 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#F6F7F9" },
     { media: "(prefers-color-scheme: dark)", color: "#0A0E14" },
@@ -53,14 +94,18 @@ export const viewport: Viewport = {
 
 /**
  * Runs before first paint: restores the saved language (with <html lang/dir>
- * so CSS direction + the Arabic font apply from byte zero) and theme pack.
+ * so CSS direction + the per-script font apply from byte zero) and theme pack.
  * Mirrors the exact keys the i18n/theme providers read.
  */
 const PREFS_BOOTSTRAP = `(() => {
   try {
     const d = document.documentElement;
     const lang = localStorage.getItem("localdock.lang");
-    if (lang === "ar") { d.lang = "ar"; d.dir = "rtl"; }
+    const LOCALES = ["en","ar","es","fr","de","pt","ru","zh","hi","ja"];
+    if (lang && LOCALES.indexOf(lang) !== -1) {
+      d.lang = lang;
+      if (lang === "ar") d.dir = "rtl";
+    }
     const pack = localStorage.getItem("localdock.themePack");
     if (pack && pack !== "teal" && /^(ocean|amethyst|sunset)$/.test(pack)) d.setAttribute("data-theme", pack);
   } catch {}
@@ -72,10 +117,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning className={cairo.variable}>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
-      >
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${cairo.variable} ${geistSans.variable} ${geistMono.variable} ${inter.variable} ${notoSc.variable} ${notoJp.variable} ${notoDeva.variable}`}
+    >
+      <body className="antialiased bg-background text-foreground">
         <script dangerouslySetInnerHTML={{ __html: PREFS_BOOTSTRAP }} />
         <ThemeProvider
           attribute="class"

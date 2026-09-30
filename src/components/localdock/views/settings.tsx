@@ -216,7 +216,7 @@ export function SettingsView() {
                 {t.settings.languageTitle}
                 <span className="font-normal"> — {t.settings.languageDesc}</span>
               </p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {LOCALE_LIST.map((l: Locale) => {
                   const meta = LOCALES[l];
                   const active = locale === l;

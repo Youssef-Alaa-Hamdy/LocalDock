@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore, useEffect } from "react";
+import { useSyncExternalStore, useEffect, useState } from "react";
 import { useTheme } from "next-themes";
 import { useI18n } from "@/lib/localdock/i18n/provider";
 import { LOCALE_LIST, LOCALES, type Locale } from "@/lib/localdock/i18n/locales";
@@ -26,7 +26,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
   Check,
+  ChevronRight,
   FolderHeart,
   Gauge,
   HardDrive,
@@ -34,6 +40,7 @@ import {
   LayoutDashboard,
   Languages,
   Moon,
+  Ellipsis,
   ArrowLeftRight,
   Settings,
   Sun,
@@ -52,6 +59,17 @@ const NAV: { key: ViewKey; labelKey: "dashboard" | "shares" | "files" | "transfe
   { key: "settings", labelKey: "settings", icon: Settings },
 ];
 
+/** The four primary tabs pinned to the mobile bottom bar; the rest live in "More". */
+type MobileTabKey = "dashboard" | "shares" | "files" | "transfers";
+const MOBILE_TABS: { key: MobileTabKey; icon: typeof Gauge }[] = [
+  { key: "dashboard", icon: LayoutDashboard },
+  { key: "shares", icon: FolderHeart },
+  { key: "files", icon: HardDrive },
+  { key: "transfers", icon: ArrowLeftRight },
+];
+const MORE_ITEMS = NAV.slice(4);
+const MORE_KEYS: ViewKey[] = MORE_ITEMS.map((i) => i.key);
+
 export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
   const { t, locale, setLocale } = useI18n();
   const view = useNav((s) => s.view);
@@ -63,6 +81,7 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
     .filter((i) => i.status === "active")
     .reduce((acc, i) => acc + i.speedBps, 0);
   const { theme, setTheme } = useTheme();
+  const [moreOpen, setMoreOpen] = useState(false);
   // hydration-safe "mounted" flag without setState-in-effect
   const mounted = useSyncExternalStore(
     () => () => undefined,
@@ -178,8 +197,8 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
 
       {/* ---------------- Main column ---------------- */}
       <div className="flex min-h-screen w-full flex-col lg:ps-60">
-        {/* Topbar — desktop keeps the roomy bar; phones get ONE slim row */}
-        <header className="sticky top-0 z-20 border-b border-border/70 bg-background/85 backdrop-blur-xl">
+        {/* Topbar — desktop keeps the roomy bar; phones get a slim brand + actions row */}
+        <header className="safe-top sticky top-0 z-20 border-b border-border/70 bg-background/85 backdrop-blur-xl">
           {/* Desktop */}
           <div className="hidden items-center gap-3 px-6 py-3 lg:flex">
             <div className="min-w-0 flex-1">
@@ -213,50 +232,23 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
             </div>
           </div>
 
-          {/* Mobile — a single compact row: brand + icon tabs + actions (~48px
-              total instead of the old two-deck header) */}
-          <div className="flex items-center gap-1 px-2 py-1.5 lg:hidden">
+          {/* Mobile — slim brand row: status lives in the bottom bar, nav lives
+              in the bottom bar, so this stays uncluttered at every width */}
+          <div className="flex h-12 items-center gap-2 px-3 lg:hidden">
             <LogoMark className="size-7 shrink-0 rounded-lg" />
-            <nav className="flex min-w-0 flex-1 items-center justify-around" aria-label={t.nav.mobile}>
-              {NAV.slice(0, 6).map((item) => {
-                const active = view === item.key;
-                const label = t.nav[item.labelKey];
-                return (
-                  <button
-                    key={item.key}
-                    onClick={() => go(item.key)}
-                    className={cn(
-                      "relative flex items-center justify-center rounded-lg p-2 transition-colors",
-                      active ? "text-primary" : "text-muted-foreground hover:text-foreground"
-                    )}
-                    aria-current={active ? "page" : undefined}
-                    aria-label={label}
-                    title={label}
-                  >
-                    <item.icon className="size-5" strokeWidth={active ? 2.2 : 1.8} />
-                    {item.key === "transfers" && activeCount > 0 && (
-                      <span className="absolute end-0 top-0.5 flex min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[8px] font-bold leading-none text-primary-foreground">
-                        {activeCount}
-                      </span>
-                    )}
-                    {active && (
-                      <span className="absolute -bottom-0.5 size-1 rounded-full bg-primary" aria-hidden />
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-bold tracking-tight">LocalDock</div>
+            </div>
+            {system.isLoading ? (
+              <Skeleton className="h-6 w-24 rounded-full" />
+            ) : (
+              <span className="flex items-center gap-1.5 rounded-full border border-border/70 bg-card px-2 py-0.5 text-[10px] font-medium text-muted-foreground shadow-sm">
+                <StatusDot ok={online} />
+                {online ? t.status.online : t.status.offline}
+              </span>
+            )}
             {mounted && (
               <>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="size-8 shrink-0 rounded-lg"
-                  onClick={() => go("settings")}
-                  aria-label={t.nav.settings}
-                >
-                  <Settings className="size-4" />
-                </Button>
                 <LanguageMenu
                   locale={locale}
                   setLocale={setLocale}
@@ -277,7 +269,7 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
           </div>
         </header>
 
-        <main className="flex-1 px-3 pb-24 pt-3 sm:px-6 sm:pt-5 lg:pb-10">
+        <main className="flex-1 px-3 pb-[calc(5.5rem_+_env(safe-area-inset-bottom))] pt-3 sm:px-6 sm:pt-5 lg:pb-10">
           <div className="mx-auto w-full max-w-6xl">
             {view === "dashboard" && <DashboardView />}
             {view === "shares" && <SharesView />}
@@ -289,6 +281,103 @@ export function AppShell({ onPairSuccess }: { onPairSuccess?: () => void }) {
           </div>
         </main>
       </div>
+
+      {/* ---------------- Mobile bottom nav ---------------- */}
+      <nav
+        aria-label={t.nav.mobile}
+        className="ld-bottomnav safe-bottom-nav fixed inset-x-0 bottom-0 z-30 lg:hidden"
+      >
+        <div className="mx-auto grid h-16 max-w-lg grid-cols-5 px-1">
+          {MOBILE_TABS.map((item) => {
+            const active = view === item.key;
+            const label = t.navShort[item.key];
+            return (
+              <button
+                key={item.key}
+                onClick={() => go(item.key)}
+                className={cn(
+                  "ld-bottomnav-item",
+                  active ? "text-primary" : "text-muted-foreground"
+                )}
+                aria-current={active ? "page" : undefined}
+              >
+                <span className="relative">
+                  <item.icon className="size-[22px]" strokeWidth={active ? 2.2 : 1.8} />
+                  {item.key === "transfers" && activeCount > 0 && (
+                    <span className="absolute -end-2 -top-1.5 flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold leading-4 text-primary-foreground">
+                      {activeCount}
+                    </span>
+                  )}
+                </span>
+                <span className="max-w-full truncate text-[10px] font-medium">{label}</span>
+                {active && (
+                  <span className="absolute top-1 size-1 rounded-full bg-primary" aria-hidden />
+                )}
+              </button>
+            );
+          })}
+          {/* More — devices / websites / settings live in a bottom sheet */}
+          <button
+            onClick={() => setMoreOpen(true)}
+            className={cn(
+              "ld-bottomnav-item",
+              MORE_KEYS.includes(view) ? "text-primary" : "text-muted-foreground"
+            )}
+          >
+            <Ellipsis className="size-[22px]" strokeWidth={MORE_KEYS.includes(view) ? 2.2 : 1.8} />
+            <span className="max-w-full truncate text-[10px] font-medium">{t.navShort.more}</span>
+            {MORE_KEYS.includes(view) && (
+              <span className="absolute top-1 size-1 rounded-full bg-primary" aria-hidden />
+            )}
+          </button>
+        </div>
+      </nav>
+
+      {/* More sheet — secondary destinations, native bottom-drawer pattern */}
+      <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+        <SheetContent
+          side="bottom"
+          className="rounded-t-2xl px-4 pb-[calc(1.25rem_+_env(safe-area-inset-bottom))]"
+        >
+          <SheetTitle className="sr-only">{t.nav.mobile}</SheetTitle>
+          <div className="mx-auto w-full max-w-lg space-y-1.5 pt-1">
+            {MORE_ITEMS.map((item) => {
+              const active = view === item.key;
+              const label = t.nav[item.labelKey];
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => {
+                    go(item.key);
+                    setMoreOpen(false);
+                  }}
+                  aria-current={active ? "page" : undefined}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-2xl border p-3.5 text-start transition-colors",
+                    active
+                      ? "border-primary/60 bg-accent/50 text-accent-foreground"
+                      : "border-border hover:bg-muted"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex size-10 shrink-0 items-center justify-center rounded-xl",
+                      active ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    <item.icon className="size-5" strokeWidth={2} />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold">{label}</span>
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground rtl:rotate-180" />
+                </button>
+              );
+            })}
+            <p className="pt-2 text-center text-[11px] text-muted-foreground">
+              {t.brand.localOnly}
+            </p>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <TransferDock />
     </div>
@@ -332,7 +421,10 @@ function LanguageMenu({
           <Languages className="size-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-44 rounded-xl">
+      <DropdownMenuContent
+        align="end"
+        className="max-h-[min(26rem,70dvh)] min-w-44 overflow-y-auto rounded-xl ld-scroll"
+      >
         {LOCALE_LIST.map((l) => {
           const meta = LOCALES[l];
           return (

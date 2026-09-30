@@ -10,6 +10,7 @@ export function SonnerToaster() {
     <Sonner
       dir={dir}
       position={dir === "rtl" ? "bottom-left" : "bottom-right"}
+      offset={{ bottom: 92, top: 16 }}
       gap={8}
       toastOptions={{
         classNames: {

@@ -44,6 +44,7 @@ export const en = {
   nav: {
     main: "Main",
     mobile: "Mobile",
+    more: "More",
     dashboard: "Dashboard",
     shares: "Shares",
     files: "Files",
@@ -51,6 +52,15 @@ export const en = {
     devices: "Devices",
     websites: "Websites",
     settings: "Settings",
+  },
+
+  /** Compact labels for the mobile bottom bar (full nav.* labels stay in the sidebar). */
+  navShort: {
+    dashboard: "Home",
+    shares: "Shares",
+    files: "Files",
+    transfers: "Transfers",
+    more: "More",
   },
 
   status: {
