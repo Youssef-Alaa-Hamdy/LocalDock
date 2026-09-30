@@ -110,8 +110,46 @@ pub fn spawn_server() -> Result<ServerHandle, String> {
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
+    #[cfg(windows)]
+    ensure_firewall_allowed(port, &node_exe);
+
     let child = cmd.spawn().map_err(|e| format!("failed to start server: {e}"))?;
     Ok(ServerHandle { port, child })
+}
+
+#[cfg(windows)]
+fn ensure_firewall_allowed(port: u16, node_exe: &PathBuf) {
+    let _ = Command::new("netsh")
+        .args(&[
+            "advfirewall",
+            "firewall",
+            "add",
+            "rule",
+            &format!("name=LocalDock Port {port}"),
+            "dir=in",
+            "action=allow",
+            "protocol=TCP",
+            &format!("localport={port}"),
+            "profile=any",
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+
+    let _ = Command::new("netsh")
+        .args(&[
+            "advfirewall",
+            "firewall",
+            "add",
+            "rule",
+            "name=LocalDock Server Runtime",
+            "dir=in",
+            "action=allow",
+            &format!("program={}", node_exe.display()),
+            "enable=yes",
+            "profile=any",
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
 }
 
 /// Poll the public health endpoint (`/api/bootstrap`) on loopback until the
