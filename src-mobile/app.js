@@ -38,6 +38,7 @@ const I18N = {
     online: "Online",
     offline: "No response",
     open: "Open",
+    pairCard: "Pair",
     pairCta: "＋  Pair a new server",
     forget: "Forget",
     saved: "Saved",
@@ -75,6 +76,7 @@ const I18N = {
     online: "متصل",
     offline: "لا يستجيب",
     open: "فتح",
+    pairCard: "اقتران",
     pairCta: "＋  اقتران بخادم جديد",
     forget: "نسيان",
     saved: "محفوظ",
@@ -433,8 +435,24 @@ function forgetHost(url) {
 
 function t(key) { return I18N[lang]?.[key] ?? I18N.en[key] ?? key; }
 
-function invoke(cmd, args) {
-  const fn = window.__TAURI?.core?.invoke;
+function getInvokeFn() {
+  return (
+    window.__TAURI__?.core?.invoke ??
+    window.__TAURI_INTERNALS__?.invoke ??
+    window.__TAURI?.core?.invoke ??
+    null
+  );
+}
+
+async function invoke(cmd, args) {
+  let fn = getInvokeFn();
+  if (!fn) {
+    for (let i = 0; i < 6; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+      fn = getInvokeFn();
+      if (fn) break;
+    }
+  }
   if (typeof fn !== "function") return Promise.reject(new Error("no-tauri"));
   return fn(cmd, args);
 }
@@ -598,7 +616,7 @@ function renderHosts() {
     const pairBtn = document.createElement("button");
     pairBtn.className   = "btn ghost";
     pairBtn.type        = "button";
-    pairBtn.textContent = t("pairCta").replace("＋  ", "");
+    pairBtn.textContent = t("pairCard");
     pairBtn.addEventListener("click", () => {
       openPairView(host);
     });
@@ -647,6 +665,8 @@ async function scan() {
   let discovered = [];
   try {
     const result = await invoke("discover_hosts", { timeoutMs: 4500 });
+    noticeShown = false;
+    $("#notice").classList.add("hidden");
     discovered = (result?.hosts ?? []).map((h) => ({
       url: h.baseUrl, name: h.name, version: h.version,
       source: h.source, state: "online",
@@ -1033,4 +1053,4 @@ function wire() {
 lang = detectLang();
 applyLang();
 wire();
-scan();
+setTimeout(() => scan(), 150);

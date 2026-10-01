@@ -44,7 +44,14 @@ let manifest = readFileSync(MANIFEST, "utf8");
 let changed = 0;
 
 /* 1. Cleartext traffic — LAN servers are plain HTTP. */
-if (!manifest.includes("android:usesCleartextTraffic")) {
+if (manifest.includes('android:usesCleartextTraffic="${usesCleartextTraffic}"')) {
+  manifest = manifest.replace(
+    'android:usesCleartextTraffic="${usesCleartextTraffic}"',
+    'android:usesCleartextTraffic="true"'
+  );
+  changed += 1;
+  info('replaced ${usesCleartextTraffic} with "true"');
+} else if (!manifest.includes("android:usesCleartextTraffic")) {
   if (/<application\b[^>]*>/.test(manifest)) {
     manifest = manifest.replace(/<application\b([^>]*)>/, (m, attrs) => {
       const patched = attrs.endsWith("/") ? attrs.slice(0, -1) : attrs;
@@ -55,8 +62,15 @@ if (!manifest.includes("android:usesCleartextTraffic")) {
   } else {
     fail("no <application> tag found in the manifest");
   }
-} else {
-  info("cleartext traffic already configured");
+}
+
+if (!manifest.includes("android:networkSecurityConfig")) {
+  manifest = manifest.replace(
+    /(<application\b[^>]*)/,
+    '$1\n        android:networkSecurityConfig="@xml/network_security_config"'
+  );
+  changed += 1;
+  info('added android:networkSecurityConfig="@xml/network_security_config"');
 }
 
 /* 2. Permissions. */
