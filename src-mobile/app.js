@@ -1,17 +1,19 @@
-/* LocalDock — Android companion launcher.
+/* LocalDock — Android companion launcher v2.
  *
- * Vanilla, dependency-free static frontend bundled by Tauri for Android.
- * Talks to the Rust shell through two commands:
- *   discover_hosts({ timeoutMs }) -> { subnet, scanned, hosts: [...] }
- *   probe_host({ baseUrl })       -> { reachable, name, serverId, version }
+ * Architecture:
+ *   Three full-screen views: Discover → Pair (2-step wizard) → Connecting.
+ *   The 6-box code input is handled entirely in JS (no native keyboard
+ *   dependencies). Pairing navigates the webview to /?pair=CODE, which
+ *   is the product's own pairing flow — it stores the device token and
+ *   the Launcher never needs to handle it.
  *
- * "Open" simply navigates the webview to the host UI — the product's own
- * web pairing flow (?pair=CODE) does the rest and stores the device token
- * in the webview's localStorage, exactly like a regular browser.
+ * Tauri commands:
+ *   discover_hosts({ timeoutMs }) → { subnet, scanned, hosts: [...] }
+ *   probe_host({ baseUrl })       → { reachable, name, serverId, version }
  */
 "use strict";
 
-/* ------------------------------ i18n ----------------------------------- */
+/* ─────────────────────────── i18n ──────────────────────────────────── */
 
 const LANG_META = [
   ["en", "English"],
@@ -36,31 +38,33 @@ const I18N = {
     online: "Online",
     offline: "No response",
     open: "Open",
-    pairCta: "Pair",
+    pairCta: "＋  Pair a new server",
     forget: "Forget",
     saved: "Saved",
     sourceMdns: "mDNS",
     sourceScan: "Scan",
     noneFound: "No servers found yet",
-    noneFoundHint: "Check that LocalDock runs on the computer on the same network, or connect manually below.",
-    pairTitle: "Pair with a code",
-    pairHint: "On the computer: Devices → Add device shows a 6-character code.",
-    hostLabel: "Server",
-    hostManual: "Enter manually…",
-    codeLabel: "Pairing code",
-    deviceLabel: "This device's name",
-    devicePlaceholder: "My phone",
-    pairGo: "Pair & open",
+    noneFoundHint: "Check that LocalDock runs on the computer on the same network.",
+    stepServer: "Server",
+    stepCode: "Code",
+    chooseServerTitle: "Choose a server",
+    chooseServerHint: "Select the LocalDock server you want to pair with, or enter its address manually.",
+    manualTitle: "Enter address manually",
+    manualHint: "e.g. 192.168.1.3:3000",
+    next: "Next →",
+    enterCodeTitle: "Enter pairing code",
+    pairHint: "On the computer: Devices → Add device → copy the 6-character code.",
+    pairGo: "Pair & Open",
     errBadCode: "Enter the 6-character code shown on the computer.",
-    errNoHost: "Choose or enter a server first.",
-    errProbe: "The server didn't respond.",
-    manualTitle: "Connect manually",
-    manualHint: "Enter the address shown in LocalDock on the computer (e.g. 192.168.1.3:3000).",
-    connect: "Connect",
-    errAddress: "That address doesn't look right — try host:port.",
+    errNoServer: "Select or enter a server first.",
+    errProbe: "Server didn't respond. Check it is reachable on your network.",
+    connecting: "Connecting…",
+    connectingHint: "Opening the server and completing pairing.",
+    cancel: "Cancel",
+    browserNotice: "Opened outside the LocalDock app — discovery unavailable. Use manual address.",
     footerHint: "Works only on your local network — nothing ever leaves it.",
     footerCompanion: "Companion app",
-    browserNotice: "The launcher was opened outside the LocalDock app, so discovery is unavailable — use manual connect.",
+    emptyServersHint: "Scan found no servers. Add one manually below.",
   },
   ar: {
     tagline: "سحابتك المحلية الخاصة",
@@ -71,31 +75,33 @@ const I18N = {
     online: "متصل",
     offline: "لا يستجيب",
     open: "فتح",
-    pairCta: "اقتران",
+    pairCta: "＋  اقتران بخادم جديد",
     forget: "نسيان",
     saved: "محفوظ",
     sourceMdns: "mDNS",
     sourceScan: "مسح الشبكة",
     noneFound: "لا خوادم حتى الآن",
-    noneFoundHint: "تحقق من تشغيل LocalDock على الحاسوب وعلى نفس الشبكة، أو اتصل يدوياً بالأسفل.",
-    pairTitle: "الاقتران برمز",
-    pairHint: "على الحاسوب: الأجهزة ← إضافة جهاز يعرض رمزاً من 6 أحرف.",
-    hostLabel: "الخادم",
-    hostManual: "إدخال يدوي…",
-    codeLabel: "رمز الاقتران",
-    deviceLabel: "اسم هذا الجهاز",
-    devicePlaceholder: "هاتفي",
+    noneFoundHint: "تحقق من تشغيل LocalDock على الحاسوب وعلى نفس الشبكة.",
+    stepServer: "الخادم",
+    stepCode: "الرمز",
+    chooseServerTitle: "اختر خادماً",
+    chooseServerHint: "اختر خادم LocalDock الذي تريد الاقتران به، أو أدخل عنوانه يدوياً.",
+    manualTitle: "إدخال العنوان يدوياً",
+    manualHint: "مثال: 192.168.1.3:3000",
+    next: "التالي ←",
+    enterCodeTitle: "أدخل رمز الاقتران",
+    pairHint: "على الحاسوب: الأجهزة ← إضافة جهاز ← انسخ الرمز المكوّن من 6 أحرف.",
     pairGo: "اقتران وفتح",
     errBadCode: "أدخل الرمز المكوّن من 6 أحرف المعروض على الحاسوب.",
-    errNoHost: "اختر خادماً أو أدخله أولاً.",
-    errProbe: "الخادم لم يستجب.",
-    manualTitle: "اتصال يدوي",
-    manualHint: "أدخل العنوان الظاهر في LocalDock على الحاسوب (مثال: 192.168.1.3:3000).",
-    connect: "اتصال",
-    errAddress: "العنوان غير صحيح — جرّب host:port.",
+    errNoServer: "اختر خادماً أو أدخله أولاً.",
+    errProbe: "الخادم لم يستجب. تحقق من إمكانية الوصول إليه على شبكتك.",
+    connecting: "جارٍ الاتصال…",
+    connectingHint: "فتح الخادم وإتمام الاقتران.",
+    cancel: "إلغاء",
+    browserNotice: "فُتح التطبيق خارج بيئة LocalDock — الاكتشاف غير متاح. استخدم العنوان اليدوي.",
     footerHint: "يعمل على شبكتك المحلية فقط — لا شيء يخرج منها أبداً.",
     footerCompanion: "التطبيق المرافق",
-    browserNotice: "فُتح المُطلق خارج تطبيق LocalDock، لذا الاكتشاف غير متاح — استخدم الاتصال اليدوي.",
+    emptyServersHint: "لم يعثر المسح على خوادم. أضف واحداً يدوياً بالأسفل.",
   },
   es: {
     tagline: "Tu nube local personal",
@@ -106,31 +112,33 @@ const I18N = {
     online: "En línea",
     offline: "Sin respuesta",
     open: "Abrir",
-    pairCta: "Vincular",
+    pairCta: "＋  Vincular nuevo servidor",
     forget: "Olvidar",
     saved: "Guardado",
     sourceMdns: "mDNS",
     sourceScan: "Escaneo",
     noneFound: "Aún no hay servidores",
-    noneFoundHint: "Comprueba que LocalDock se ejecute en el ordenador y en la misma red, o conéctate manualmente abajo.",
-    pairTitle: "Vincular con código",
-    pairHint: "En el ordenador: Dispositivos → Añadir dispositivo muestra un código de 6 caracteres.",
-    hostLabel: "Servidor",
-    hostManual: "Introducir manualmente…",
-    codeLabel: "Código de vinculación",
-    deviceLabel: "Nombre de este dispositivo",
-    devicePlaceholder: "Mi teléfono",
+    noneFoundHint: "Comprueba que LocalDock se ejecute en el ordenador y en la misma red.",
+    stepServer: "Servidor",
+    stepCode: "Código",
+    chooseServerTitle: "Elige un servidor",
+    chooseServerHint: "Selecciona el servidor LocalDock con el que quieres vincularte, o introduce su dirección manualmente.",
+    manualTitle: "Introducir dirección manual",
+    manualHint: "Ej: 192.168.1.3:3000",
+    next: "Siguiente →",
+    enterCodeTitle: "Introduce el código de vinculación",
+    pairHint: "En el ordenador: Dispositivos → Añadir dispositivo → copia el código de 6 caracteres.",
     pairGo: "Vincular y abrir",
     errBadCode: "Introduce el código de 6 caracteres que muestra el ordenador.",
-    errNoHost: "Elige o introduce un servidor primero.",
-    errProbe: "El servidor no respondió.",
-    manualTitle: "Conexión manual",
-    manualHint: "Introduce la dirección que muestra LocalDock en el ordenador (p. ej. 192.168.1.3:3000).",
-    connect: "Conectar",
-    errAddress: "Esa dirección no parece válida — prueba host:puerto.",
+    errNoServer: "Elige o introduce un servidor primero.",
+    errProbe: "El servidor no respondió. Comprueba que es accesible en tu red.",
+    connecting: "Conectando…",
+    connectingHint: "Abriendo el servidor y completando la vinculación.",
+    cancel: "Cancelar",
+    browserNotice: "Abierto fuera de la app LocalDock; el descubrimiento no está disponible. Usa la dirección manual.",
     footerHint: "Funciona solo en tu red local — nada sale de ella.",
     footerCompanion: "Aplicación complementaria",
-    browserNotice: "Abriste el lanzador fuera de la app de LocalDock; el descubrimiento no está disponible — usa la conexión manual.",
+    emptyServersHint: "El escaneo no encontró servidores. Añade uno manualmente abajo.",
   },
   fr: {
     tagline: "Votre cloud local personnel",
@@ -141,31 +149,33 @@ const I18N = {
     online: "En ligne",
     offline: "Injoignable",
     open: "Ouvrir",
-    pairCta: "Associer",
+    pairCta: "＋  Associer un nouveau serveur",
     forget: "Oublier",
     saved: "Enregistré",
     sourceMdns: "mDNS",
     sourceScan: "Analyse",
     noneFound: "Aucun serveur pour l'instant",
-    noneFoundHint: "Vérifiez que LocalDock tourne sur l'ordinateur et sur le même réseau, ou connectez-vous manuellement ci-dessous.",
-    pairTitle: "Associer avec un code",
-    pairHint: "Sur l'ordinateur : Appareils → Ajouter un appareil affiche un code à 6 caractères.",
-    hostLabel: "Serveur",
-    hostManual: "Saisie manuelle…",
-    codeLabel: "Code d'association",
-    deviceLabel: "Nom de cet appareil",
-    devicePlaceholder: "Mon téléphone",
+    noneFoundHint: "Vérifiez que LocalDock tourne sur l'ordinateur et sur le même réseau.",
+    stepServer: "Serveur",
+    stepCode: "Code",
+    chooseServerTitle: "Choisissez un serveur",
+    chooseServerHint: "Sélectionnez le serveur LocalDock avec lequel vous souhaitez vous associer, ou saisissez son adresse manuellement.",
+    manualTitle: "Saisir l'adresse manuellement",
+    manualHint: "Ex : 192.168.1.3:3000",
+    next: "Suivant →",
+    enterCodeTitle: "Saisissez le code d'association",
+    pairHint: "Sur l'ordinateur : Appareils → Ajouter un appareil → copiez le code à 6 caractères.",
     pairGo: "Associer et ouvrir",
     errBadCode: "Saisissez le code à 6 caractères affiché sur l'ordinateur.",
-    errNoHost: "Choisissez ou saisissez d'abord un serveur.",
-    errProbe: "Le serveur n'a pas répondu.",
-    manualTitle: "Connexion manuelle",
-    manualHint: "Saisissez l'adresse affichée dans LocalDock sur l'ordinateur (ex. 192.168.1.3:3000).",
-    connect: "Se connecter",
-    errAddress: "Cette adresse semble invalide — essayez hôte:port.",
+    errNoServer: "Choisissez ou saisissez d'abord un serveur.",
+    errProbe: "Le serveur n'a pas répondu. Vérifiez qu'il est accessible sur votre réseau.",
+    connecting: "Connexion…",
+    connectingHint: "Ouverture du serveur et finalisation de l'association.",
+    cancel: "Annuler",
+    browserNotice: "Ouvert hors de l'application LocalDock ; la découverte n'est pas disponible. Utilisez l'adresse manuelle.",
     footerHint: "Fonctionne uniquement sur votre réseau local — rien n'en sort jamais.",
     footerCompanion: "Application compagne",
-    browserNotice: "Vous avez ouvert le lanceur hors de l'application LocalDock : la découverte est indisponible — utilisez la connexion manuelle.",
+    emptyServersHint: "L'analyse n'a trouvé aucun serveur. Ajoutez-en un manuellement ci-dessous.",
   },
   de: {
     tagline: "Deine persönliche lokale Cloud",
@@ -176,31 +186,33 @@ const I18N = {
     online: "Online",
     offline: "Keine Antwort",
     open: "Öffnen",
-    pairCta: "Koppeln",
+    pairCta: "＋  Neuen Server koppeln",
     forget: "Vergessen",
     saved: "Gespeichert",
     sourceMdns: "mDNS",
     sourceScan: "Scan",
     noneFound: "Noch keine Server gefunden",
-    noneFoundHint: "Prüfe, ob LocalDock auf dem Computer im selben Netzwerk läuft, oder verbinde dich unten manuell.",
-    pairTitle: "Mit Code koppeln",
-    pairHint: "Am Computer: Geräte → Gerät hinzufügen zeigt einen 6-stelligen Code.",
-    hostLabel: "Server",
-    hostManual: "Manuell eingeben…",
-    codeLabel: "Kopplungscode",
-    deviceLabel: "Name dieses Geräts",
-    devicePlaceholder: "Mein Handy",
+    noneFoundHint: "Prüfe, ob LocalDock auf dem Computer im selben Netzwerk läuft.",
+    stepServer: "Server",
+    stepCode: "Code",
+    chooseServerTitle: "Server auswählen",
+    chooseServerHint: "Wähle den LocalDock-Server, mit dem du koppeln möchtest, oder gib seine Adresse manuell ein.",
+    manualTitle: "Adresse manuell eingeben",
+    manualHint: "z. B. 192.168.1.3:3000",
+    next: "Weiter →",
+    enterCodeTitle: "Kopplungscode eingeben",
+    pairHint: "Am Computer: Geräte → Gerät hinzufügen → 6-stelligen Code kopieren.",
     pairGo: "Koppeln und öffnen",
     errBadCode: "Gib den 6-stelligen Code ein, der am Computer angezeigt wird.",
-    errNoHost: "Wähle oder gib zuerst einen Server ein.",
-    errProbe: "Der Server hat nicht geantwortet.",
-    manualTitle: "Manuell verbinden",
-    manualHint: "Gib die Adresse ein, die LocalDock am Computer anzeigt (z. B. 192.168.1.3:3000).",
-    connect: "Verbinden",
-    errAddress: "Diese Adresse wirkt ungültig — versuche Host:Port.",
+    errNoServer: "Wähle oder gib zuerst einen Server ein.",
+    errProbe: "Der Server hat nicht geantwortet. Prüfe die Erreichbarkeit im Netzwerk.",
+    connecting: "Verbinde…",
+    connectingHint: "Server öffnen und Kopplung abschließen.",
+    cancel: "Abbrechen",
+    browserNotice: "Außerhalb der LocalDock-App geöffnet; Suche nicht verfügbar. Nutze die manuelle Adresse.",
     footerHint: "Funktioniert nur in deinem lokalen Netzwerk — nichts verlässt es.",
     footerCompanion: "Begleit-App",
-    browserNotice: "Der Launcher wurde außerhalb der LocalDock-App geöffnet; die Suche ist nicht verfügbar — nutze die manuelle Verbindung.",
+    emptyServersHint: "Der Scan hat keine Server gefunden. Füge einen manuell unten hinzu.",
   },
   pt: {
     tagline: "Sua nuvem local pessoal",
@@ -211,31 +223,33 @@ const I18N = {
     online: "On-line",
     offline: "Sem resposta",
     open: "Abrir",
-    pairCta: "Parear",
+    pairCta: "＋  Parear novo servidor",
     forget: "Esquecer",
     saved: "Salvo",
     sourceMdns: "mDNS",
     sourceScan: "Varredura",
     noneFound: "Nenhum servidor por enquanto",
-    noneFoundHint: "Confira se o LocalDock está em execução no computador e na mesma rede, ou conecte-se manualmente abaixo.",
-    pairTitle: "Parear com código",
-    pairHint: "No computador: Dispositivos → Adicionar dispositivo mostra um código de 6 caracteres.",
-    hostLabel: "Servidor",
-    hostManual: "Inserir manualmente…",
-    codeLabel: "Código de pareamento",
-    deviceLabel: "Nome deste dispositivo",
-    devicePlaceholder: "Meu celular",
+    noneFoundHint: "Confira se o LocalDock está em execução no computador e na mesma rede.",
+    stepServer: "Servidor",
+    stepCode: "Código",
+    chooseServerTitle: "Escolha um servidor",
+    chooseServerHint: "Selecione o servidor LocalDock com o qual deseja parear, ou insira o endereço manualmente.",
+    manualTitle: "Inserir endereço manualmente",
+    manualHint: "Ex.: 192.168.1.3:3000",
+    next: "Próximo →",
+    enterCodeTitle: "Digite o código de pareamento",
+    pairHint: "No computador: Dispositivos → Adicionar dispositivo → copie o código de 6 caracteres.",
     pairGo: "Parear e abrir",
     errBadCode: "Digite o código de 6 caracteres mostrado no computador.",
-    errNoHost: "Escolha ou insira um servidor primeiro.",
-    errProbe: "O servidor não respondeu.",
-    manualTitle: "Conexão manual",
-    manualHint: "Insira o endereço exibido no LocalDock do computador (ex.: 192.168.1.3:3000).",
-    connect: "Conectar",
-    errAddress: "Esse endereço parece inválido — tente host:porta.",
+    errNoServer: "Escolha ou insira um servidor primeiro.",
+    errProbe: "O servidor não respondeu. Verifique se é acessível na sua rede.",
+    connecting: "Conectando…",
+    connectingHint: "Abrindo o servidor e concluindo o pareamento.",
+    cancel: "Cancelar",
+    browserNotice: "Aberto fora do app LocalDock; a descoberta não está disponível. Use o endereço manual.",
     footerHint: "Funciona apenas na sua rede local — nada sai dela.",
     footerCompanion: "Aplicativo complementar",
-    browserNotice: "Você abriu o iniciador fora do app do LocalDock; a descoberta não está disponível — use a conexão manual.",
+    emptyServersHint: "A varredura não encontrou servidores. Adicione um manualmente abaixo.",
   },
   ru: {
     tagline: "Ваше личное локальное облако",
@@ -246,31 +260,33 @@ const I18N = {
     online: "В сети",
     offline: "Нет ответа",
     open: "Открыть",
-    pairCta: "Связать",
+    pairCta: "＋  Связать новый сервер",
     forget: "Забыть",
     saved: "Сохранено",
     sourceMdns: "mDNS",
     sourceScan: "Сканирование",
     noneFound: "Пока серверов нет",
-    noneFoundHint: "Проверьте, что LocalDock запущен на компьютере в той же сети, или подключитесь вручную ниже.",
-    pairTitle: "Связать по коду",
-    pairHint: "На компьютере: Устройства → Добавить устройство — появится код из 6 символов.",
-    hostLabel: "Сервер",
-    hostManual: "Ввести вручную…",
-    codeLabel: "Код сопряжения",
-    deviceLabel: "Имя этого устройства",
-    devicePlaceholder: "Мой телефон",
+    noneFoundHint: "Проверьте, что LocalDock запущен на компьютере в той же сети.",
+    stepServer: "Сервер",
+    stepCode: "Код",
+    chooseServerTitle: "Выберите сервер",
+    chooseServerHint: "Выберите сервер LocalDock для сопряжения или введите адрес вручную.",
+    manualTitle: "Ввести адрес вручную",
+    manualHint: "Например: 192.168.1.3:3000",
+    next: "Далее →",
+    enterCodeTitle: "Введите код сопряжения",
+    pairHint: "На компьютере: Устройства → Добавить устройство → скопируйте 6-символьный код.",
     pairGo: "Связать и открыть",
     errBadCode: "Введите 6-символьный код, показанный на компьютере.",
-    errNoHost: "Сначала выберите или введите сервер.",
-    errProbe: "Сервер не ответил.",
-    manualTitle: "Ручное подключение",
-    manualHint: "Введите адрес из LocalDock на компьютере (например, 192.168.1.3:3000).",
-    connect: "Подключить",
-    errAddress: "Адрес выглядит неверным — попробуйте host:port.",
+    errNoServer: "Сначала выберите или введите сервер.",
+    errProbe: "Сервер не ответил. Проверьте доступность в сети.",
+    connecting: "Подключение…",
+    connectingHint: "Открываем сервер и завершаем сопряжение.",
+    cancel: "Отмена",
+    browserNotice: "Открыто вне приложения LocalDock; обнаружение недоступно. Используйте ручной адрес.",
     footerHint: "Работает только в вашей локальной сети — ничего не выходит за её пределы.",
     footerCompanion: "Сопутствующее приложение",
-    browserNotice: "Лаунчер открыт вне приложения LocalDock: обнаружение недоступно — используйте ручное подключение.",
+    emptyServersHint: "Сканирование не нашло серверов. Добавьте один вручную ниже.",
   },
   zh: {
     tagline: "你的专属本地云",
@@ -281,31 +297,33 @@ const I18N = {
     online: "在线",
     offline: "无响应",
     open: "打开",
-    pairCta: "配对",
+    pairCta: "＋  配对新服务器",
     forget: "忽略",
     saved: "已保存",
     sourceMdns: "mDNS",
     sourceScan: "扫描",
     noneFound: "暂未发现服务器",
-    noneFoundHint: "请确认电脑上的 LocalDock 正在运行并处于同一网络，或在下方手动连接。",
-    pairTitle: "使用配对码",
-    pairHint: "在电脑上：设备 → 添加设备，会显示 6 位配对码。",
-    hostLabel: "服务器",
-    hostManual: "手动输入…",
-    codeLabel: "配对码",
-    deviceLabel: "本设备名称",
-    devicePlaceholder: "我的手机",
+    noneFoundHint: "请确认电脑上的 LocalDock 正在运行并处于同一网络。",
+    stepServer: "服务器",
+    stepCode: "配对码",
+    chooseServerTitle: "选择服务器",
+    chooseServerHint: "选择要配对的 LocalDock 服务器，或手动输入其地址。",
+    manualTitle: "手动输入地址",
+    manualHint: "如：192.168.1.3:3000",
+    next: "下一步 →",
+    enterCodeTitle: "输入配对码",
+    pairHint: "在电脑上：设备 → 添加设备 → 复制 6 位配对码。",
     pairGo: "配对并打开",
     errBadCode: "请输入电脑上显示的 6 位配对码。",
-    errNoHost: "请先选择或输入服务器。",
-    errProbe: "服务器没有响应。",
-    manualTitle: "手动连接",
-    manualHint: "输入电脑上 LocalDock 显示的地址（如 192.168.1.3:3000）。",
-    connect: "连接",
-    errAddress: "地址似乎不正确——请尝试 主机:端口。",
+    errNoServer: "请先选择或输入服务器。",
+    errProbe: "服务器没有响应。请检查网络连接。",
+    connecting: "正在连接…",
+    connectingHint: "打开服务器并完成配对。",
+    cancel: "取消",
+    browserNotice: "在 LocalDock 应用外部打开，无法自动发现。请使用手动地址。",
     footerHint: "仅在本地网络内工作——数据绝不离开你的网络。",
     footerCompanion: "伴侣应用",
-    browserNotice: "启动器是在 LocalDock 应用之外打开的，无法自动发现——请使用手动连接。",
+    emptyServersHint: "扫描未发现服务器。请在下方手动添加。",
   },
   hi: {
     tagline: "आपका निजी लोकल क्लाउड",
@@ -316,31 +334,33 @@ const I18N = {
     online: "ऑनलाइन",
     offline: "कोई जवाब नहीं",
     open: "खोलें",
-    pairCta: "जोड़ें",
+    pairCta: "＋  नया सर्वर जोड़ें",
     forget: "भूलें",
     saved: "सहेजा गया",
     sourceMdns: "mDNS",
     sourceScan: "स्कैन",
     noneFound: "अभी कोई सर्वर नहीं मिला",
-    noneFoundHint: "जाँचें कि कंप्यूटर पर LocalDock चल रहा है और वही नेटवर्क है, या नीचे मैन्युअल रूप से कनेक्ट करें।",
-    pairTitle: "कोड से जोड़ें",
-    pairHint: "कंप्यूटर पर: डिवाइस → डिवाइस जोड़ें — 6 अक्षरों का कोड दिखेगा।",
-    hostLabel: "सर्वर",
-    hostManual: "मैन्युअल रूप से दर्ज करें…",
-    codeLabel: "पेयरिंग कोड",
-    deviceLabel: "इस डिवाइस का नाम",
-    devicePlaceholder: "मेरा फ़ोन",
+    noneFoundHint: "जाँचें कि कंप्यूटर पर LocalDock चल रहा है और वही नेटवर्क है।",
+    stepServer: "सर्वर",
+    stepCode: "कोड",
+    chooseServerTitle: "सर्वर चुनें",
+    chooseServerHint: "वह LocalDock सर्वर चुनें जिससे आप जोड़ना चाहते हैं, या पता मैन्युअल रूप से दर्ज करें।",
+    manualTitle: "पता मैन्युअल रूप से दर्ज करें",
+    manualHint: "जैसे: 192.168.1.3:3000",
+    next: "अगला →",
+    enterCodeTitle: "पेयरिंग कोड दर्ज करें",
+    pairHint: "कंप्यूटर पर: डिवाइस → डिवाइस जोड़ें → 6 अक्षरों का कोड कॉपी करें।",
     pairGo: "जोड़ें और खोलें",
     errBadCode: "कंप्यूटर पर दिखाया गया 6 अक्षरों का कोड दर्ज करें।",
-    errNoHost: "पहले कोई सर्वर चुनें या दर्ज करें।",
-    errProbe: "सर्वर ने जवाब नहीं दिया।",
-    manualTitle: "मैन्युअल कनेक्शन",
-    manualHint: "कंप्यूटर पर LocalDock में दिखाया गया पता दर्ज करें (जैसे 192.168.1.3:3000)।",
-    connect: "कनेक्ट",
-    errAddress: "यह पता सही नहीं लगता — host:port आज़माएँ।",
+    errNoServer: "पहले कोई सर्वर चुनें या दर्ज करें।",
+    errProbe: "सर्वर ने जवाब नहीं दिया। नेटवर्क कनेक्शन जाँचें।",
+    connecting: "कनेक्ट हो रहा है…",
+    connectingHint: "सर्वर खोल रहे हैं और पेयरिंग पूरी कर रहे हैं।",
+    cancel: "रद्द करें",
+    browserNotice: "LocalDock ऐप के बाहर खोला गया; खोज उपलब्ध नहीं है। मैन्युअल पता उपयोग करें।",
     footerHint: "केवल आपके लोकल नेटवर्क पर काम करता है — कुछ भी बाहर नहीं जाता।",
     footerCompanion: "साथी ऐप",
-    browserNotice: "आपने लॉन्चर को LocalDock ऐप के बाहर खोला है, इसलिए खोज उपलब्ध नहीं है — मैन्युअल कनेक्शन इस्तेमाल करें।",
+    emptyServersHint: "स्कैन में कोई सर्वर नहीं मिला। नीचे मैन्युअल रूप से एक जोड़ें।",
   },
   ja: {
     tagline: "あなた専用のローカルクラウド",
@@ -351,69 +371,55 @@ const I18N = {
     online: "オンライン",
     offline: "応答なし",
     open: "開く",
-    pairCta: "ペアリング",
+    pairCta: "＋  新しいサーバーをペアリング",
     forget: "削除",
     saved: "保存済み",
     sourceMdns: "mDNS",
     sourceScan: "スキャン",
     noneFound: "サーバーはまだ見つかりません",
-    noneFoundHint: "パソコンで LocalDock が同じネットワークで動作しているか確認するか、下から手動で接続してください。",
-    pairTitle: "コードでペアリング",
-    pairHint: "パソコン側：デバイス → デバイスを追加 に 6 文字のコードが表示されます。",
-    hostLabel: "サーバー",
-    hostManual: "手動で入力…",
-    codeLabel: "ペアリングコード",
-    deviceLabel: "このデバイスの名前",
-    devicePlaceholder: "自分のスマホ",
+    noneFoundHint: "パソコンで LocalDock が同じネットワークで動作しているか確認してください。",
+    stepServer: "サーバー",
+    stepCode: "コード",
+    chooseServerTitle: "サーバーを選択",
+    chooseServerHint: "ペアリングする LocalDock サーバーを選択するか、アドレスを手動で入力してください。",
+    manualTitle: "アドレスを手動入力",
+    manualHint: "例：192.168.1.3:3000",
+    next: "次へ →",
+    enterCodeTitle: "ペアリングコードを入力",
+    pairHint: "パソコン側：デバイス → デバイスを追加 → 6 文字のコードをコピー。",
     pairGo: "ペアリングして開く",
     errBadCode: "パソコンに表示された 6 文字のコードを入力してください。",
-    errNoHost: "先にサーバーを選択または入力してください。",
-    errProbe: "サーバーが応答しません。",
-    manualTitle: "手動で接続",
-    manualHint: "パソコンの LocalDock に表示されるアドレスを入力してください（例：192.168.1.3:3000）。",
-    connect: "接続",
-    errAddress: "アドレスが正しくないようです — ホスト:ポート を試してください。",
+    errNoServer: "先にサーバーを選択または入力してください。",
+    errProbe: "サーバーが応答しません。ネットワーク接続を確認してください。",
+    connecting: "接続中…",
+    connectingHint: "サーバーを開いてペアリングを完了しています。",
+    cancel: "キャンセル",
+    browserNotice: "LocalDock アプリの外で開かれたため、検出は利用できません。手動アドレスをご利用ください。",
     footerHint: "ローカルネットワーク内でのみ動作します — データは外に出ません。",
     footerCompanion: "コンパニオンアプリ",
-    browserNotice: "LocalDock アプリの外でランチャーが開かれたため、検出は利用できません — 手動接続をご利用ください。",
+    emptyServersHint: "スキャンでサーバーが見つかりませんでした。下から手動で追加してください。",
   },
 };
 
-/* ------------------------------ helpers --------------------------------- */
+/* ─────────────────────────── helpers ───────────────────────────────── */
 
 const $ = (sel) => document.querySelector(sel);
 
-const LANG_KEY = "localdock.launcher.lang";
+const LANG_KEY  = "localdock.launcher.lang";
 const HOSTS_KEY = "localdock.launcher.hosts";
-const CODE_ALPHABET = /^[A-HJ-NP-Z2-9]{6}$/;
+const CODE_RE   = /^[A-HJ-NP-Z2-9]{6}$/i;
 
 function store(key, fallback) {
-  try {
-    return window.localStorage.getItem(key) ?? fallback;
-  } catch {
-    return fallback;
-  }
+  try { return window.localStorage.getItem(key) ?? fallback; } catch { return fallback; }
 }
-
-function saveStore(key, value) {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    /* private mode */
-  }
+function saveStore(key, val) {
+  try { window.localStorage.setItem(key, val); } catch { /* private */ }
 }
 
 function loadHosts() {
-  try {
-    return JSON.parse(store(HOSTS_KEY, "[]")) ?? [];
-  } catch {
-    return [];
-  }
+  try { return JSON.parse(store(HOSTS_KEY, "[]")) ?? []; } catch { return []; }
 }
-
-function saveHosts(list) {
-  saveStore(HOSTS_KEY, JSON.stringify(list));
-}
+function saveHosts(list) { saveStore(HOSTS_KEY, JSON.stringify(list)); }
 
 function saveHost(url, name) {
   const list = loadHosts().filter((h) => h.url !== url);
@@ -425,59 +431,55 @@ function forgetHost(url) {
   saveStore(HOSTS_KEY, JSON.stringify(loadHosts().filter((h) => h.url !== url)));
 }
 
-function t(key) {
-  return I18N[lang]?.[key] ?? I18N.en[key] ?? key;
-}
+function t(key) { return I18N[lang]?.[key] ?? I18N.en[key] ?? key; }
 
 function invoke(cmd, args) {
   const fn = window.__TAURI?.core?.invoke;
-  if (typeof fn !== "function") {
-    return Promise.reject(new Error("no-tauri"));
-  }
+  if (typeof fn !== "function") return Promise.reject(new Error("no-tauri"));
   return fn(cmd, args);
 }
 
 let toastTimer = null;
-function toast(message) {
+function toast(msg) {
   const el = $("#toast");
-  el.textContent = message;
+  el.textContent = msg;
   el.classList.remove("hidden");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.add("hidden"), 3200);
 }
 
-/** Normalize manual input to an origin URL with an explicit port. */
 function normalizeHost(raw) {
-  const trimmed = String(raw || "").trim();
-  if (!trimmed) return null;
-  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  const s = String(raw || "").trim();
+  if (!s) return null;
+  const withScheme = /^https?:\/\//i.test(s) ? s : `http://${s}`;
   try {
-    const url = new URL(withScheme);
-    if (!url.hostname) return null;
-    if (url.protocol !== "http:") return null;
-    const port = url.port || "3000";
-    return { url: `${url.protocol}//${url.hostname}:${port}`, name: url.hostname };
-  } catch {
-    return null;
-  }
+    const u = new URL(withScheme);
+    if (!u.hostname || u.protocol !== "http:") return null;
+    const port = u.port || "3000";
+    return { url: `http://${u.hostname}:${port}`, name: u.hostname };
+  } catch { return null; }
 }
 
-/* ------------------------------- state ---------------------------------- */
+/* ─────────────────────────── state ─────────────────────────────────── */
 
 let lang = "en";
-/** Whether the out-of-app notice is currently visible (re-translated on
- * language switch). */
 let noticeShown = false;
-/** url -> {url, name, version?, source, state: online|offline|unknown} */
+
+/** url → { url, name, version?, source, state: online|offline|unknown } */
 const hostMap = new Map();
-let scanning = false;
+let scanning  = false;
+
+/** Selected server for pairing (step 1 → step 2) */
+let pairTarget = null;   // { url, name }
+
+/* ─────────────────────────── i18n apply ────────────────────────────── */
 
 function detectLang() {
   const saved = store(LANG_KEY, "");
   if (saved && I18N[saved]) return saved;
   const candidates = navigator.languages ?? [navigator.language];
-  for (const candidate of candidates) {
-    const base = String(candidate || "").toLowerCase().split("-")[0];
+  for (const c of candidates) {
+    const base = String(c || "").toLowerCase().split("-")[0];
     if (I18N[base]) return base;
   }
   return "en";
@@ -485,7 +487,7 @@ function detectLang() {
 
 function applyLang() {
   document.documentElement.lang = lang;
-  document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+  document.documentElement.dir  = lang === "ar" ? "rtl" : "ltr";
   document.querySelectorAll("[data-i]").forEach((el) => {
     el.textContent = t(el.getAttribute("data-i"));
   });
@@ -493,7 +495,6 @@ function applyLang() {
   notice.textContent = noticeShown ? t("browserNotice") : "";
   notice.classList.toggle("hidden", !noticeShown);
   buildLangSelect();
-  buildHostSelect();
   renderHosts();
 }
 
@@ -509,37 +510,27 @@ function buildLangSelect() {
   sel.value = lang;
 }
 
-function knownHosts() {
-  return [...hostMap.values()];
+/* ─────────────────────────── views ─────────────────────────────────── */
+
+function showView(id) {
+  ["view-discover", "view-pair", "view-connecting"].forEach((v) => {
+    const el = $(`#${v}`);
+    el.classList.toggle("active", v === id);
+    el.classList.toggle("hidden", v !== id);
+  });
 }
 
-function buildHostSelect() {
-  const sel = $("#pairHost");
-  const previous = sel.value;
-  sel.innerHTML = "";
-  const manual = document.createElement("option");
-  manual.value = "__manual__";
-  manual.textContent = t("hostManual");
-  sel.appendChild(manual);
-  for (const host of knownHosts()) {
-    const opt = document.createElement("option");
-    opt.value = host.url;
-    opt.textContent = `${host.name} (${host.url.replace("http://", "")})`;
-    sel.appendChild(opt);
-  }
-  sel.value = [...sel.options].some((o) => o.value === previous) ? previous : knownHosts()[0]?.url ?? "__manual__";
-  $("#pairHostManual").classList.toggle("hidden", sel.value !== "__manual__");
-}
+/* ─────────────────────────── discover view ─────────────────────────── */
 
 function chipLabel(source) {
-  if (source === "mdns") return t("sourceMdns");
+  if (source === "mdns")         return t("sourceMdns");
   if (source === "network-scan") return t("sourceScan");
   return t("saved");
 }
 
 function renderHosts() {
-  const wrap = $("#hosts");
-  const hosts = knownHosts();
+  const wrap  = $("#hosts");
+  const hosts = [...hostMap.values()];
   wrap.classList.toggle("hidden", hosts.length === 0 && !scanning);
 
   if (!scanning && hosts.length === 0) {
@@ -548,7 +539,7 @@ function renderHosts() {
     empty.className = "card";
     empty.innerHTML = `<h3></h3><p class="muted"></p>`;
     empty.querySelector("h3").textContent = t("noneFound");
-    empty.querySelector("p").textContent = t("noneFoundHint");
+    empty.querySelector("p").textContent  = t("noneFoundHint");
     wrap.appendChild(empty);
     return;
   }
@@ -561,73 +552,79 @@ function renderHosts() {
 
     const head = document.createElement("div");
     head.className = "host-head";
+
     const title = document.createElement("div");
     title.className = "host-title";
+
     const name = document.createElement("span");
-    name.className = "host-name";
+    name.className   = "host-name";
     name.textContent = host.name || "LocalDock";
+
     const src = document.createElement("span");
-    src.className = "chip";
+    src.className   = "chip";
     src.textContent = chipLabel(host.source);
     title.append(name, src);
+
     if (host.version) {
       const ver = document.createElement("span");
-      ver.className = "chip";
+      ver.className   = "chip";
       ver.textContent = `v${host.version}`;
       title.append(ver);
     }
+
     const state = document.createElement("span");
     state.className = `chip state ${host.state === "online" ? "online" : host.state === "offline" ? "offline" : ""}`;
     state.textContent = host.state === "online" ? t("online") : host.state === "offline" ? t("offline") : "…";
     head.append(title, state);
     card.appendChild(head);
 
-    const url = document.createElement("p");
-    url.className = "url";
-    url.textContent = host.url;
-    card.appendChild(url);
+    const urlEl = document.createElement("p");
+    urlEl.className   = "url";
+    urlEl.textContent = host.url;
+    card.appendChild(urlEl);
 
     const actions = document.createElement("div");
     actions.className = "host-actions";
-    const open = document.createElement("button");
-    open.className = "btn primary";
-    open.type = "button";
-    open.textContent = t("open");
-    open.addEventListener("click", () => {
+
+    const openBtn = document.createElement("button");
+    openBtn.className   = "btn primary";
+    openBtn.type        = "button";
+    openBtn.textContent = t("open");
+    openBtn.addEventListener("click", () => {
       saveHost(host.url, host.name);
-      window.location.href = `${host.url.replace(/\/$/, "")}/`;
+      navigateTo(host.url, null);
     });
-    const pair = document.createElement("button");
-    pair.className = "btn ghost";
-    pair.type = "button";
-    pair.textContent = t("pairCta");
-    pair.addEventListener("click", () => {
-      buildHostSelect();
-      $("#pairHost").value = host.url;
-      $("#pairHostManual").classList.add("hidden");
-      $("#pairCode").focus();
-      card.scrollIntoView({ behavior: "smooth", block: "end" });
+
+    const pairBtn = document.createElement("button");
+    pairBtn.className   = "btn ghost";
+    pairBtn.type        = "button";
+    pairBtn.textContent = t("pairCta").replace("＋  ", "");
+    pairBtn.addEventListener("click", () => {
+      openPairView(host);
     });
+
     const spacer = document.createElement("span");
     spacer.className = "spacer";
-    const forget = document.createElement("button");
-    forget.className = "btn icon";
-    forget.type = "button";
-    forget.title = t("forget");
-    forget.textContent = "✕";
-    forget.addEventListener("click", () => {
+
+    const forgetBtn = document.createElement("button");
+    forgetBtn.className   = "btn icon";
+    forgetBtn.type        = "button";
+    forgetBtn.title       = t("forget");
+    forgetBtn.textContent = "✕";
+    forgetBtn.addEventListener("click", () => {
       forgetHost(host.url);
       hostMap.delete(host.url);
-      buildHostSelect();
       renderHosts();
+      buildStep1ServerList();
     });
-    actions.append(open, pair, spacer, forget);
+
+    actions.append(openBtn, pairBtn, spacer, forgetBtn);
     card.appendChild(actions);
     wrap.appendChild(card);
   }
 }
 
-/* ------------------------------ scanning -------------------------------- */
+/* ─────────────────────────── scanning ──────────────────────────────── */
 
 function setScanning(active) {
   scanning = active;
@@ -651,11 +648,8 @@ async function scan() {
   try {
     const result = await invoke("discover_hosts", { timeoutMs: 4500 });
     discovered = (result?.hosts ?? []).map((h) => ({
-      url: h.baseUrl,
-      name: h.name,
-      version: h.version,
-      source: h.source,
-      state: "online",
+      url: h.baseUrl, name: h.name, version: h.version,
+      source: h.source, state: "online",
     }));
   } catch (err) {
     if (String(err).includes("no-tauri")) {
@@ -670,7 +664,7 @@ async function scan() {
     hostMap.set(host.url, host);
   }
 
-  // Refresh saved hosts that discovery did not find (they may be asleep).
+  // Refresh saved hosts not found by discovery.
   const savedOnly = loadHosts().filter((h) => !hostMap.has(h.url));
   await Promise.allSettled(
     savedOnly.map(async (saved) => {
@@ -684,107 +678,357 @@ async function scan() {
           source: "saved",
           state,
         });
-      } catch {
-        /* outside the app — leave as unknown */
-      }
+      } catch { /* outside app — leave unknown */ }
     })
   );
 
   setScanning(false);
-  buildHostSelect();
   renderHosts();
+  buildStep1ServerList();
 }
 
-/* -------------------------------- wire ---------------------------------- */
+/* ─────────────────────────── navigation ────────────────────────────── */
 
-function showFieldError(id, messageKey) {
-  const el = $(id);
-  el.textContent = t(messageKey);
-  el.classList.remove("hidden");
-}
+let connectCancelled = false;
 
-function currentPairTarget() {
-  const sel = $("#pairHost");
-  if (sel.value === "__manual__") {
-    const manual = normalizeHost($("#pairHostManual").value);
-    if (!manual) {
-      showFieldError("#pairError", "errAddress");
-      return null;
+function navigateTo(baseUrl, pairCode) {
+  connectCancelled = false;
+  showView("view-connecting");
+  const url = pairCode
+    ? `${baseUrl.replace(/\/$/, "")}/?pair=${encodeURIComponent(pairCode)}`
+    : `${baseUrl.replace(/\/$/, "")}/`;
+
+  // Small delay so the connecting animation is visible.
+  setTimeout(() => {
+    if (!connectCancelled) {
+      window.location.href = url;
     }
-    return manual;
-  }
-  const host = hostMap.get(sel.value);
-  if (!host) {
-    showFieldError("#pairError", "errNoHost");
-    return null;
-  }
-  return { url: host.url, name: host.name };
+  }, 400);
 }
+
+/* ─────────────────────────── pair view ─────────────────────────────── */
+
+/** Open the pair wizard, optionally pre-selecting a host. */
+function openPairView(preselect) {
+  pairTarget = null;
+  buildStep1ServerList(preselect);
+  goStep(1);
+  showView("view-pair");
+}
+
+function goStep(n) {
+  const s1 = $("#step1");
+  const s2 = $("#step2");
+  const d1 = $("#step-dot-1");
+  const d2 = $("#step-dot-2");
+  const line = document.querySelector(".step-line");
+
+  if (n === 1) {
+    s1.classList.remove("hidden");
+    s2.classList.add("hidden");
+    d1.classList.add("active");
+    d1.classList.remove("done");
+    d2.classList.remove("active", "done");
+    line.classList.remove("done");
+    clearCodeBoxes();
+    $("#pairError").classList.add("hidden");
+  } else {
+    s1.classList.add("hidden");
+    s2.classList.remove("hidden");
+    d1.classList.remove("active");
+    d1.classList.add("done");
+    d2.classList.add("active");
+    d2.classList.remove("done");
+    line.classList.add("done");
+    renderSelectedServerPreview();
+    // Focus first code box.
+    setTimeout(() => codeBoxes()[0]?.focus(), 100);
+  }
+}
+
+/* ── Step 1: server list ── */
+
+function buildStep1ServerList(preselect) {
+  const list  = $("#pairServerList");
+  const hosts = [...hostMap.values()];
+  list.innerHTML = "";
+
+  if (hosts.length === 0) {
+    const empty = document.createElement("div");
+    empty.className   = "empty-servers";
+    empty.innerHTML   = `<div class="empty-icon">🔍</div><p></p>`;
+    empty.querySelector("p").textContent = t("emptyServersHint");
+    list.appendChild(empty);
+    // Auto-show manual entry.
+    showManualEntry(true);
+  } else {
+    hideManualEntry();
+    for (const host of hosts) {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "server-item";
+      item.dataset.url = host.url;
+      item.innerHTML = `
+        <div class="server-item-icon">🖥</div>
+        <div class="server-item-info">
+          <div class="server-item-name"></div>
+          <div class="server-item-url"></div>
+        </div>
+        <div class="server-item-badge">
+          <span class="chip ${host.state === "online" ? "state online" : host.state === "offline" ? "state offline" : ""}"></span>
+          <span class="server-check">✓</span>
+        </div>
+      `;
+      item.querySelector(".server-item-name").textContent = host.name || "LocalDock";
+      item.querySelector(".server-item-url").textContent  = host.url.replace("http://", "");
+      const stateChip = item.querySelector(".chip");
+      stateChip.textContent = host.state === "online" ? t("online") : host.state === "offline" ? t("offline") : "…";
+      item.addEventListener("click", () => selectServerItem(host, item));
+
+      if (preselect && preselect.url === host.url) {
+        item.classList.add("selected");
+        pairTarget = { url: host.url, name: host.name };
+      }
+      list.appendChild(item);
+    }
+
+    // Auto-select first online if nothing preselected.
+    if (!pairTarget) {
+      const first = list.querySelector(".server-item");
+      if (first) {
+        const firstHost = hosts[0];
+        first.classList.add("selected");
+        pairTarget = { url: firstHost.url, name: firstHost.name };
+      }
+    }
+  }
+}
+
+function selectServerItem(host, itemEl) {
+  document.querySelectorAll(".server-item").forEach((i) => i.classList.remove("selected"));
+  itemEl.classList.add("selected");
+  pairTarget = { url: host.url, name: host.name };
+  hideManualEntry();
+  $("#step1Next").disabled = false;
+}
+
+function showManualEntry(autoShow) {
+  $("#manualEntry").classList.remove("hidden");
+  const btn = $("#toggleManual");
+  btn.querySelector(".toggle-icon").textContent = "－";
+}
+
+function hideManualEntry() {
+  if (document.querySelectorAll(".server-item").length > 0) {
+    $("#manualEntry").classList.add("hidden");
+    $("#toggleManual").querySelector(".toggle-icon").textContent = "＋";
+  }
+}
+
+/* ── Step 2: code boxes ── */
+
+function codeBoxes() {
+  return [...document.querySelectorAll(".code-box")];
+}
+
+function clearCodeBoxes() {
+  codeBoxes().forEach((box) => {
+    box.value = "";
+    box.classList.remove("filled", "error-shake");
+  });
+}
+
+function getCode() {
+  return codeBoxes().map((b) => b.value.toUpperCase()).join("");
+}
+
+function renderSelectedServerPreview() {
+  const preview = $("#selectedServerPreview");
+  if (!pairTarget) { preview.innerHTML = ""; return; }
+  preview.innerHTML = `
+    <div class="selected-server-icon">🖥</div>
+    <div class="selected-server-info">
+      <div class="selected-server-name"></div>
+      <div class="selected-server-url"></div>
+    </div>
+  `;
+  preview.querySelector(".selected-server-name").textContent = pairTarget.name || "LocalDock";
+  preview.querySelector(".selected-server-url").textContent  = pairTarget.url.replace("http://", "");
+}
+
+function wireCodeBoxes() {
+  const boxes = codeBoxes();
+  boxes.forEach((box, idx) => {
+    box.addEventListener("input", (e) => {
+      // Allow only alphanumeric.
+      const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      e.target.value = val.slice(-1);
+      e.target.classList.toggle("filled", e.target.value !== "");
+      if (val && idx < boxes.length - 1) {
+        boxes[idx + 1].focus();
+      }
+      $("#pairError").classList.add("hidden");
+    });
+
+    box.addEventListener("keydown", (e) => {
+      if (e.key === "Backspace" && !box.value && idx > 0) {
+        boxes[idx - 1].focus();
+        boxes[idx - 1].value = "";
+        boxes[idx - 1].classList.remove("filled");
+        e.preventDefault();
+      }
+      if (e.key === "ArrowLeft" && idx > 0) {
+        boxes[idx - 1].focus();
+        e.preventDefault();
+      }
+      if (e.key === "ArrowRight" && idx < boxes.length - 1) {
+        boxes[idx + 1].focus();
+        e.preventDefault();
+      }
+    });
+
+    // Paste support.
+    box.addEventListener("paste", (e) => {
+      e.preventDefault();
+      const paste = (e.clipboardData || window.clipboardData)
+        .getData("text")
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "")
+        .slice(0, 6);
+      paste.split("").forEach((ch, i) => {
+        if (boxes[idx + i]) {
+          boxes[idx + i].value = ch;
+          boxes[idx + i].classList.add("filled");
+        }
+      });
+      const next = idx + paste.length;
+      if (next < boxes.length) boxes[next].focus();
+      else boxes[boxes.length - 1].focus();
+    });
+  });
+}
+
+function shakeCodeBoxes() {
+  codeBoxes().forEach((b) => {
+    b.classList.remove("error-shake");
+    void b.offsetWidth; // reflow
+    b.classList.add("error-shake");
+    setTimeout(() => b.classList.remove("error-shake"), 400);
+  });
+}
+
+/* ─────────────────────────── wire events ───────────────────────────── */
 
 function wire() {
-  $("#lang").addEventListener("change", (event) => {
-    lang = event.target.value;
+  /* Language switcher */
+  $("#lang").addEventListener("change", (e) => {
+    lang = e.target.value;
     saveStore(LANG_KEY, lang);
     applyLang();
   });
 
+  /* Discover view */
   $("#rescan").addEventListener("click", () => scan());
 
-  $("#pairHost").addEventListener("change", (event) => {
-    $("#pairHostManual").classList.toggle("hidden", event.target.value !== "__manual__");
-    $("#pairError").classList.add("hidden");
+  $("#openPair").addEventListener("click", () => {
+    openPairView(null);
   });
 
-  $("#pairCode").addEventListener("input", (event) => {
-    const cleaned = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
-    event.target.value = cleaned;
-    $("#pairError").classList.add("hidden");
+  /* Pair view — step 1 */
+  $("#backToDiscover").addEventListener("click", () => {
+    showView("view-discover");
   });
 
-  $("#pairGo").addEventListener("click", () => {
-    $("#pairError").classList.add("hidden");
-    const code = $("#pairCode").value.trim().toUpperCase();
-    if (!CODE_ALPHABET.test(code)) {
-      showFieldError("#pairError", "errBadCode");
-      return;
+  $("#toggleManual").addEventListener("click", () => {
+    const entry = $("#manualEntry");
+    const isHidden = entry.classList.contains("hidden");
+    entry.classList.toggle("hidden", !isHidden);
+    $("#toggleManual").querySelector(".toggle-icon").textContent = isHidden ? "－" : "＋";
+    if (isHidden) {
+      $("#manualHost").focus();
+      // Deselect server items when manual is open.
+      document.querySelectorAll(".server-item").forEach((i) => i.classList.remove("selected"));
+      pairTarget = null;
     }
-    const target = currentPairTarget();
-    if (!target) return;
-    saveHost(target.url, target.name);
-    // The product's own (fully localized) web flow claims the code and
-    // stores the device token — the launcher only lands on the claim URL.
-    const base = target.url.replace(/\/$/, "");
-    window.location.href = `${base}/?pair=${encodeURIComponent(code)}`;
   });
 
-  $("#manualGo").addEventListener("click", async () => {
-    $("#manualError").classList.add("hidden");
-    const target = normalizeHost($("#manualHost").value);
-    if (!target) {
-      showFieldError("#manualError", "errAddress");
-      return;
-    }
-    $("#manualGo").disabled = true;
-    try {
-      const probe = await invoke("probe_host", { baseUrl: target.url });
-      if (probe?.reachable) {
-        saveHost(target.url, probe.name || target.name);
-        const base = target.url.replace(/\/$/, "");
-        window.location.href = `${base}/`;
+  $("#step1Next").addEventListener("click", async () => {
+    // Check if manual entry is being used.
+    const manualEntry = $("#manualEntry");
+    const isManualVisible = !manualEntry.classList.contains("hidden");
+    const manualVal = $("#manualHost").value.trim();
+
+    if (isManualVisible && manualVal) {
+      // Manual address mode.
+      const normalized = normalizeHost(manualVal);
+      if (!normalized) {
+        $("#manualError").textContent = t("errProbe");
+        $("#manualError").classList.remove("hidden");
         return;
       }
-      showFieldError("#manualError", "errProbe");
-    } catch {
-      // Outside the app (plain browser): open directly.
-      const base = target.url.replace(/\/$/, "");
-      window.location.href = `${base}/`;
-    } finally {
-      $("#manualGo").disabled = false;
+      $("#step1Next").disabled = true;
+      $("#step1Next").textContent = "…";
+      try {
+        const probe = await invoke("probe_host", { baseUrl: normalized.url });
+        if (probe?.reachable) {
+          const name = probe.name || normalized.name;
+          saveHost(normalized.url, name);
+          hostMap.set(normalized.url, { url: normalized.url, name, source: "saved", state: "online" });
+          pairTarget = { url: normalized.url, name };
+          buildStep1ServerList(pairTarget);
+          renderHosts();
+        } else {
+          pairTarget = { url: normalized.url, name: normalized.name };
+        }
+      } catch {
+        // Outside Tauri — use as-is.
+        pairTarget = { url: normalized.url, name: normalized.name };
+      } finally {
+        $("#step1Next").disabled = false;
+        $("#step1Next").textContent = t("next");
+      }
     }
+
+    if (!pairTarget) {
+      toast(t("errNoServer"));
+      return;
+    }
+    goStep(2);
+  });
+
+  /* Pair view — step 2 */
+  $("#backToStep1").addEventListener("click", () => {
+    goStep(1);
+  });
+
+  wireCodeBoxes();
+
+  $("#pairGo").addEventListener("click", () => {
+    const code = getCode();
+    if (!CODE_RE.test(code)) {
+      shakeCodeBoxes();
+      $("#pairError").textContent = t("errBadCode");
+      $("#pairError").classList.remove("hidden");
+      return;
+    }
+    if (!pairTarget) {
+      toast(t("errNoServer"));
+      goStep(1);
+      return;
+    }
+    $("#pairError").classList.add("hidden");
+    saveHost(pairTarget.url, pairTarget.name);
+    navigateTo(pairTarget.url, code);
+  });
+
+  /* Connecting view */
+  $("#cancelConnect").addEventListener("click", () => {
+    connectCancelled = true;
+    showView("view-discover");
   });
 }
 
-/* -------------------------------- boot ---------------------------------- */
+/* ─────────────────────────── boot ──────────────────────────────────── */
 
 lang = detectLang();
 applyLang();
