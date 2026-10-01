@@ -14,7 +14,7 @@ import type { AuthContext, Share, ShareAccess } from "./types";
 import {
   getSettings,
   findDeviceByToken,
-  requestIsLocal,
+  isLoopbackRequest,
   touchDevice,
 } from "./registry";
 
@@ -26,7 +26,7 @@ export function getAuth(req: Request): AuthContext {
   if (ownerKey) {
     const settings = getSettings();
     if (ownerKey === settings.ownerKey) {
-      if (settings.allowRemoteOwner || requestIsLocal(req)) {
+      if (settings.allowRemoteOwner || isLoopbackRequest(req)) {
         return { kind: "owner" };
       }
       // If remote owner is disabled, fall through to check if this is an authorized paired device

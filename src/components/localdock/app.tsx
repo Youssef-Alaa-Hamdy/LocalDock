@@ -49,13 +49,18 @@ export default function LocalDockApp() {
 
     try {
       const info: BootstrapInfo = await Api.bootstrap();
-      setOwnerKey(info.ownerKey);
+      setOwnerKey(info.ownerKey || null);
       // Server-reported desktop flag AND Tauri presence (belt & suspenders).
       (window as { __LOCALDOCK_DESKTOP__?: boolean }).__LOCALDOCK_DESKTOP__ =
         !!(info.desktop && isDesktop());
       // Inject the real LAN IP so QR codes / share links use the reachable address.
       if (info.lanIp) {
         setLanIp(info.lanIp);
+      }
+      if (!info.ownerKey && !loadDeviceToken()) {
+        setPairCode("");
+        setMode("pair-claim");
+        return;
       }
       if (!info.onboarded) {
         setMode("onboarding");

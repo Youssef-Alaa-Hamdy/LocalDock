@@ -66,6 +66,12 @@ const I18N = {
     footerHint: "Works only on your local network — nothing ever leaves it.",
     footerCompanion: "Companion app",
     emptyServersHint: "Scan found no servers. Add one manually below.",
+    scanQrBtn: "Scan QR code",
+    qrTitle: "Scan QR code",
+    qrHint: "Point your camera at the QR code shown on your computer screen to pair instantly.",
+    qrPickImage: "Scan from image",
+    qrCameraError: "Unable to access camera. Check permissions or pick an image.",
+    qrFound: "Pairing QR recognized!",
   },
   ar: {
     tagline: "سحابتك المحلية الخاصة",
@@ -104,6 +110,12 @@ const I18N = {
     footerHint: "يعمل على شبكتك المحلية فقط — لا شيء يخرج منها أبداً.",
     footerCompanion: "التطبيق المرافق",
     emptyServersHint: "لم يعثر المسح على خوادم. أضف واحداً يدوياً بالأسفل.",
+    scanQrBtn: "مسح رمز QR",
+    qrTitle: "مسح رمز QR للإقران",
+    qrHint: "وجّه الكاميرا نحو رمز QR الظاهر على شاشة الحاسوب للإقران فوراً.",
+    qrPickImage: "مسح من صورة",
+    qrCameraError: "تعذر تشغيل الكاميرا. تحقق من الصلاحيات أو اختر صورة.",
+    qrFound: "تم التعرف على رمز الاقتران!",
   },
   es: {
     tagline: "Tu nube local personal",
@@ -719,9 +731,13 @@ function navigateTo(baseUrl, pairCode) {
     : `${baseUrl.replace(/\/$/, "")}/`;
 
   // Small delay so the connecting animation is visible.
-  setTimeout(() => {
+  setTimeout(async () => {
     if (!connectCancelled) {
-      window.location.href = url;
+      try {
+        await invoke("navigate_to", { url });
+      } catch {
+        window.location.href = url;
+      }
     }
   }, 400);
 }
@@ -1046,6 +1062,158 @@ function wire() {
     connectCancelled = true;
     showView("view-discover");
   });
+
+  /* QR Scanner wiring */
+  $("#openQrScan")?.addEventListener("click", () => openQrScanner());
+  $("#step2QrScan")?.addEventListener("click", () => openQrScanner());
+  $("#closeQr")?.addEventListener("click", () => closeQrScanner());
+  $("#qrBackdrop")?.addEventListener("click", () => closeQrScanner());
+  $("#qrFileInput")?.addEventListener("change", handleQrFileInput);
+}
+
+/* ─────────────────────────── QR Scanner ────────────────────────────── */
+
+let qrStream = null;
+let qrScanActive = false;
+
+async function openQrScanner() {
+  const modal = $("#qrModal");
+  const errorEl = $("#qrError");
+  const feedback = $("#qrFeedback");
+  modal.classList.remove("hidden");
+  errorEl.classList.add("hidden");
+  feedback.classList.add("hidden");
+
+  try {
+    qrStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+    });
+    const video = $("#qrVideo");
+    video.srcObject = qrStream;
+    await video.play();
+    qrScanActive = true;
+    requestAnimationFrame(scanQrTick);
+  } catch (err) {
+    errorEl.textContent = t("qrCameraError");
+    errorEl.classList.remove("hidden");
+  }
+}
+
+function closeQrScanner() {
+  qrScanActive = false;
+  if (qrStream) {
+    qrStream.getTracks().forEach((tr) => tr.stop());
+    qrStream = null;
+  }
+  const video = $("#qrVideo");
+  if (video) video.srcObject = null;
+  $("#qrModal").classList.add("hidden");
+}
+
+function scanQrTick() {
+  if (!qrScanActive) return;
+  const video = $("#qrVideo");
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    const canvas = $("#qrCanvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+    let decoded = null;
+    if (typeof window.jsQR === "function") {
+      decoded = window.jsQR(imgData.data, imgData.width, imgData.height, {
+        inversionAttempts: "dontInvert",
+      });
+    }
+
+    if (decoded && decoded.data) {
+      onQrDecoded(decoded.data);
+      return;
+    }
+  }
+  requestAnimationFrame(scanQrTick);
+}
+
+function onQrDecoded(content) {
+  qrScanActive = false;
+  const feedback = $("#qrFeedback");
+  feedback.textContent = "✓";
+  feedback.classList.remove("hidden");
+
+  setTimeout(() => {
+    closeQrScanner();
+    processQrContent(content);
+  }, 350);
+}
+
+function processQrContent(raw) {
+  const str = String(raw || "").trim();
+  if (!str) return;
+
+  // Pattern 1: URL with ?pair=CODE (standard LocalDock pairing QR)
+  try {
+    const urlObj = new URL(str);
+    const code = urlObj.searchParams.get("pair");
+    if (code) {
+      const baseUrl = `${urlObj.protocol}//${urlObj.host}`;
+      saveHost(baseUrl, "LocalDock");
+      toast(t("qrFound"));
+      navigateTo(baseUrl, code);
+      return;
+    }
+    // URL without pair code: select host and open Step 2
+    const normalized = normalizeHost(urlObj.origin);
+    if (normalized) {
+      saveHost(normalized.url, normalized.name);
+      openPairView(normalized);
+      toast(t("qrFound"));
+      return;
+    }
+  } catch {
+    /* not a full URL */
+  }
+
+  // Pattern 2: standalone 6-character code
+  if (CODE_RE.test(str)) {
+    toast(t("qrFound"));
+    openPairView(pairTarget);
+    goStep(2);
+    fillCodeBoxes(str);
+    return;
+  }
+
+  toast(str.slice(0, 30));
+}
+
+function handleQrFileInput(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = $("#qrCanvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx.drawImage(img, 0, 0);
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      let decoded = null;
+      if (typeof window.jsQR === "function") {
+        decoded = window.jsQR(imgData.data, imgData.width, imgData.height);
+      }
+      if (decoded && decoded.data) {
+        onQrDecoded(decoded.data);
+      } else {
+        toast("لم يتم العثور على رمز QR في الصورة");
+      }
+    };
+    img.src = event.target.result;
+  };
+  reader.readAsDataURL(file);
+  e.target.value = "";
 }
 
 /* ─────────────────────────── boot ──────────────────────────────────── */

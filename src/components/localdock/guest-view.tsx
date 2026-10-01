@@ -154,6 +154,7 @@ export function PairClaimView({
       baseUrl: string;
     } | { kind: "paired"; serverName: string }
   >({ kind: "loading" });
+  const [inputCode, setInputCode] = useState(code || "");
   const [deviceName, setDeviceName] = useState("");
   const [pairing, setPairing] = useState(false);
   const { t } = useI18n();
@@ -192,10 +193,12 @@ export function PairClaimView({
   }, [code, t]);
 
   const pair = async () => {
+    const finalCode = (code || inputCode).trim().toUpperCase();
+    if (!finalCode || finalCode.length < 4) return;
     setPairing(true);
     try {
       const res = await Api.pairClaim({
-        code,
+        code: finalCode,
         deviceName: deviceName.trim() || t.pairClaim.defaultDevice,
         platform: platformGuess,
       });
@@ -225,15 +228,29 @@ export function PairClaimView({
         {state.kind === "found" && (
           <>
             <h1 className="mt-5 text-xl font-bold tracking-tight">{t.pairClaim.title}</h1>
-            <div className="mt-4 rounded-2xl border border-border bg-muted/40 p-4">
-              <p className="flex items-center justify-center gap-2 text-sm font-semibold">
-                <Wifi className="size-4 text-success" />
-                {state.serverName}
-              </p>
-              <code className="mt-1.5 block font-mono text-2xl font-bold tracking-[0.3em]">
-                {code}
-              </code>
-            </div>
+            {code ? (
+              <div className="mt-4 rounded-2xl border border-border bg-muted/40 p-4">
+                <p className="flex items-center justify-center gap-2 text-sm font-semibold">
+                  <Wifi className="size-4 text-success" />
+                  {state.serverName}
+                </p>
+                <code className="mt-1.5 block font-mono text-2xl font-bold tracking-[0.3em]">
+                  {code}
+                </code>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-2xl border border-border bg-muted/40 p-4 text-start">
+                <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
+                  {t.pairClaim.title}
+                </label>
+                <input
+                  value={inputCode}
+                  onChange={(e) => setInputCode(e.target.value.toUpperCase().slice(0, 6))}
+                  placeholder="XXXXXX"
+                  className="h-11 w-full rounded-xl border border-border bg-background px-3.5 font-mono text-center text-xl font-bold tracking-[0.25em] uppercase outline-none focus:ring-2 focus:ring-ring"
+                />
+              </div>
+            )}
             <label className="mt-4 block text-start">
               <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">
                 {t.pairClaim.deviceName}
@@ -248,7 +265,7 @@ export function PairClaimView({
               size="lg"
               className="mt-5 w-full rounded-2xl"
               onClick={pair}
-              disabled={pairing || !deviceName.trim()}
+              disabled={pairing || !deviceName.trim() || !(code || inputCode).trim()}
             >
               {pairing ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
               {t.pairClaim.trust}

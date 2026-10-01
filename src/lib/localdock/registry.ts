@@ -415,6 +415,25 @@ export function requestIsLocal(req: Request): boolean {
   return isPrivateIp(first);
 }
 
+export function isLoopbackIp(ipOrHost: string): boolean {
+  const h = ipOrHost.toLowerCase().trim();
+  return h === "127.0.0.1" || h.startsWith("127.") || h === "localhost" || h === "::1" || h === "[::1]";
+}
+
+export function isLoopbackRequest(req: Request): boolean {
+  const fwd =
+    req.headers.get("x-forwarded-for") ??
+    req.headers.get("x-real-ip") ??
+    "";
+  if (fwd) {
+    const first = fwd.split(",")[0].trim();
+    if (!isLoopbackIp(first)) return false;
+  }
+  const host = req.headers.get("host") ?? "";
+  const hostName = host.split(":")[0].toLowerCase();
+  return isLoopbackIp(hostName);
+}
+
 export function isPrivateIp(ip: string): boolean {
   if (ip === "::1" || ip === "127.0.0.1" || ip.startsWith("127.")) return true;
   if (ip.startsWith("10.") || ip.startsWith("192.168.")) return true;

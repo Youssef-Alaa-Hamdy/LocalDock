@@ -15,11 +15,19 @@
 
 use crate::discovery;
 
+#[tauri::command]
+pub async fn navigate_to(webview_window: tauri::WebviewWindow, url: String) -> Result<(), String> {
+    let parsed: tauri::Url = url.parse().map_err(|e| format!("{e}"))?;
+    webview_window.navigate(parsed).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             discovery::discover_hosts,
             discovery::probe_host,
+            navigate_to,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the LocalDock Android app");
