@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#070b10" />
+    <title>LocalDock</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230f766e'/%3E%3Cpath d='M32 12v26M32 38l-9-9M32 38l9-9' stroke='%2399f6e4' stroke-width='5' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Cpath d='M16 48h32' stroke='%2399f6e4' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="bg" aria-hidden="true"></div>
+
+    <header class="top">
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
+          <rect width="64" height="64" rx="14" fill="#0f766e" />
+          <path d="M32 12v26M32 38l-9-9M32 38l9-9" stroke="#99f6e4" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+          <path d="M16 48h32" stroke="#99f6e4" stroke-width="5" stroke-linecap="round" />
+        </svg>
+        <div>
+          <h1>LocalDock</h1>
+          <p class="tagline" data-i="tagline"></p>
+        </div>
+      </div>
+      <select id="lang" class="lang" aria-label="Language"></select>
+    </header>
+
+    <main>
+      <section id="notice" class="notice hidden"></section>
+
+      <section class="scan-row">
+        <div>
+          <h2 data-i="discoveryTitle"></h2>
+          <p class="muted" id="scanHint" data-i="looking"></p>
+        </div>
+        <button id="rescan" class="btn ghost compact" type="button">
+          <span class="spin" aria-hidden="true">↻</span><span data-i="rescan"></span>
+        </button>
+      </section>
+
+      <section id="radar" class="radar-wrap" aria-live="polite">
+        <div class="radar">
+          <span class="ring r1"></span><span class="ring r2"></span><span class="ring r3"></span><span class="core"></span>
+        </div>
+        <p class="muted" data-i="lookingHint"></p>
+      </section>
+
+      <section id="hosts" class="hosts hidden"></section>
+
+      <section class="card">
+        <h3 data-i="pairTitle"></h3>
+        <p class="muted" data-i="pairHint"></p>
+        <label class="lbl" for="pairHost" data-i="hostLabel"></label>
+        <select id="pairHost" class="field"></select>
+        <input id="pairHostManual" class="field hidden" placeholder="192.168.1.3:3000" inputmode="url" autocomplete="off" />
+        <label class="lbl" for="pairCode" data-i="codeLabel"></label>
+        <input id="pairCode" class="field code" maxlength="6" autocomplete="off" spellcheck="false" placeholder="······" />
+        <button id="pairGo" class="btn primary wide" type="button" data-i="pairGo"></button>
+        <p id="pairError" class="error hidden"></p>
+      </section>
+
+      <details class="card manual">
+        <summary data-i="manualTitle"></summary>
+        <p class="muted" data-i="manualHint"></p>
+        <div class="row">
+          <input id="manualHost" class="field grow" placeholder="192.168.1.3:3000" inputmode="url" autocomplete="off" />
+          <button id="manualGo" class="btn ghost" type="button" data-i="connect"></button>
+        </div>
+        <p id="manualError" class="error hidden"></p>
+      </details>
+    </main>
+
+    <footer>
+      <p data-i="footerHint"></p>
+      <p class="muted small"><span data-i="footerCompanion"></span> · <span id="ver">1.0.0</span></p>
+    </footer>
+
+    <div id="toast" class="toast hidden" role="status"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

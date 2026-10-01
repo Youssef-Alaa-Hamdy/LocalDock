@@ -73,10 +73,7 @@ pub fn find_free_port(preferred: u16) -> u16 {
 pub fn resource_paths() -> Result<(PathBuf, PathBuf), String> {
     // Resource layout (Windows): <exe dir>/resources/server + resources/bin/node.exe
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let base = exe
-        .parent()
-        .ok_or("no parent dir")?
-        .to_path_buf();
+    let base = exe.parent().ok_or("no parent dir")?.to_path_buf();
     let server_dir = base.join("resources").join("server");
     let node_exe = base.join("resources").join("bin").join("node.exe");
     if !server_dir.join("server.js").exists() {
@@ -113,7 +110,9 @@ pub fn spawn_server() -> Result<ServerHandle, String> {
     #[cfg(windows)]
     ensure_firewall_allowed(port, &node_exe);
 
-    let child = cmd.spawn().map_err(|e| format!("failed to start server: {e}"))?;
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("failed to start server: {e}"))?;
     Ok(ServerHandle { port, child })
 }
 
@@ -192,10 +191,7 @@ pub fn lan_ips() -> Vec<String> {
     let mut out = Vec::new();
     if let Ok(sock) = UdpSocket::bind("0.0.0.0:0") {
         for probe in ["192.168.255.255", "10.255.255.255", "172.16.255.255"] {
-            if sock
-                .connect((probe, 1))
-                .is_ok()
-            {
+            if sock.connect((probe, 1)).is_ok() {
                 if let Ok(addr) = sock.local_addr() {
                     if !addr.ip().is_loopback() {
                         let ip = addr.ip().to_string();

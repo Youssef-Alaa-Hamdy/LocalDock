@@ -11,12 +11,20 @@
 //! All records are advertised ONLY on the local network — LocalDock never
 //! opens a path to the internet.
 
-use mdns_sd::{ServiceDaemon, ServiceInfo};
+#[cfg(desktop)]
+use mdns_sd::ServiceInfo;
+use mdns_sd::{ServiceDaemon, ServiceEvent};
+#[cfg(desktop)]
 use std::collections::HashMap;
+use std::net::IpAddr;
+use std::time::{Duration, Instant};
 
 const SERVICE_TYPE: &str = "_localdock._tcp.local.";
+
+#[cfg(desktop)]
 const HOSTNAME: &str = "localdock.local.";
 
+#[cfg(desktop)]
 pub struct MdnsHandle {
     daemon: ServiceDaemon,
     /// Fully-qualified instance name needed for unregistration.
@@ -24,10 +32,17 @@ pub struct MdnsHandle {
 }
 
 /// Keep the mDNS instance name conservative: letters, digits, dashes.
+#[cfg(desktop)]
 fn safe_instance(name: &str) -> String {
     let clean: String = name
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == ' ' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == ' ' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .replace(' ', "-")
         .trim_matches('-')
@@ -40,6 +55,7 @@ fn safe_instance(name: &str) -> String {
 }
 
 /// Start advertising this server on the LAN.
+#[cfg(desktop)]
 pub fn advertise(server_name: &str, port: u16) -> Result<MdnsHandle, String> {
     let daemon = ServiceDaemon::new().map_err(|e| format!("mdns daemon: {e}"))?;
 
@@ -57,9 +73,13 @@ pub fn advertise(server_name: &str, port: u16) -> Result<MdnsHandle, String> {
         .register(info)
         .map_err(|e| format!("mdns register: {e}"))?;
 
-    Ok(MdnsHandle { daemon, fqdn: instance })
+    Ok(MdnsHandle {
+        daemon,
+        fqdn: instance,
+    })
 }
 
+#[cfg(desktop)]
 impl MdnsHandle {
     /// Stop advertising. Never panics; shutdown must always stay quiet.
     pub fn stop(&mut self) {
@@ -68,4 +88,48 @@ impl MdnsHandle {
         std::thread::sleep(std::time::Duration::from_millis(150));
         let _ = self.daemon.shutdown();
     }
+}
+
+/// Browse the network for LocalDock servers for up to `timeout`.
+///
+/// Used by the Android companion (`discovery`). Multicast reception may be
+/// silently blocked on some Android Wi-Fi stacks (a native app cannot
+/// easily hold a MulticastLock), so callers must treat an empty result as
+/// "unknown" — never as "definitely no servers". The TCP sweep in
+/// `discovery` is the authoritative fallback.
+#[allow(dead_code)]
+pub fn browse(timeout: Duration) -> Vec<(IpAddr, u16, String)> {
+    let Ok(daemon) = ServiceDaemon::new() else {
+        return Vec::new();
+    };
+    let Ok(receiver) = daemon.browse(SERVICE_TYPE) else {
+        let _ = daemon.shutdown();
+        return Vec::new();
+    };
+
+    let deadline = Instant::now() + timeout;
+    let mut out: Vec<(IpAddr, u16, String)> = Vec::new();
+    loop {
+        let now = Instant::now();
+        if now >= deadline {
+            break;
+        }
+        match receiver.recv_timeout(deadline - now) {
+            Ok(ServiceEvent::ServiceResolved(info)) => {
+                let name = info
+                    .get_property_val_str("name")
+                    .unwrap_or("LocalDock")
+                    .to_string();
+                let port = info.get_port();
+                for ip in info.get_addresses() {
+                    out.push((*ip, port, name.clone()));
+                }
+            }
+            Ok(_) => {}
+            Err(_) => break,
+        }
+    }
+
+    let _ = daemon.shutdown();
+    out
 }

@@ -14,7 +14,11 @@
     "tauri": "tauri",
     "tauri:prep": "node scripts/tauri-prep.mjs",
     "build:windows": "bun run build && bun run tauri build",
-    "dev:windows": "LOCALDOCK_DESKTOP=1 bun run tauri dev"
+    "dev:windows": "LOCALDOCK_DESKTOP=1 bun run tauri dev",
+    "android:init": "bun run tauri icon src-tauri/icons/icon.png && bun run tauri android init && node scripts/android-init-patch.mjs",
+    "android:dev": "bun run tauri android dev",
+    "android:build": "bun run tauri android build --apk --target aarch64 --target armv7 --target x86_64",
+    "android:build:aab": "bun run tauri android build --aab --target aarch64"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

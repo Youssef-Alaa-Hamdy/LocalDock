@@ -13,10 +13,11 @@
 [![Rust](https://img.shields.io/badge/Rust-Stable-DEA584?logo=rust&logoColor=black)](https://www.rust-lang.org/)
 [![Languages](https://img.shields.io/badge/UI%20Languages-10%20%7C%20RTL%20ready-E4405F?logo=googletranslate&logoColor=white)](#-global-localization--التعريب-العالمي)
 [![Themes](https://img.shields.io/badge/Theme%20Packs-4%20%C3%97%20Light%2FDark-8B5CF6?logo=palettor)](#-theming--الثيمات)
+[![Android](https://img.shields.io/badge/Android-Companion%20App-3DDC84?logo=android&logoColor=black)](docs/ANDROID_APP.md)
 [![Local-First](https://img.shields.io/badge/Architecture-100%25%20Local--First-22c55e?logo=shield)](https://github.com/Youssef-Alaa-Hamdy/LocalDock)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[English](#-english-overview) • [العربية — النسخة الكاملة](README.ar.md) • [What's New](#-whats-new--أحدث-التحسينات) • [Features](#-key-features--أبرز-المميزات) • [Transfers](#-transfer-engine--محرك-النقل) • [Architecture](#-architecture--المعمارية-التقنية) • [Security](#-security--privacy--الأمان-والخصوصية) • [Releases](https://github.com/Youssef-Alaa-Hamdy/LocalDock/releases)
+[English](#-english-overview) • [العربية — النسخة الكاملة](README.ar.md) • [Screenshots](#-screenshots--لقطات-الشاشة) • [What's New](#-whats-new--أحدث-التحسينات) • [Features](#-key-features--أبرز-المميزات) • [Transfers](#-transfer-engine--محرك-النقل) • [Architecture](#-architecture--المعمارية-التقنية) • [Security](#-security--privacy--الأمان-والخصوصية) • [Releases](https://github.com/Youssef-Alaa-Hamdy/LocalDock/releases)
 
 ---
 
@@ -50,6 +51,57 @@ Scan QR with Phone → Available on the Entire Network Instantly!
 
 ---
 
+## 📸 Screenshots | لقطات الشاشة
+
+Real captures of LocalDock running on the host machine — every screen below ships in the app today, in **light & dark themes**, **10 languages**, and fully responsive layouts.
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/dashboard-light.png" height="330" alt="Dashboard — light theme" />
+      <br/><sub><b>Dashboard — live overview, quick actions & recent activity</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/files-dark.png" height="330" alt="File browser — dark theme" />
+      <br/><sub><b>File browser — server-side thumbnail grid (dark)</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/preview-modal.png" height="330" alt="Media preview modal" />
+      <br/><sub><b>Media preview — zoom, rotate, counter & SHA-256 verify</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/transfers-live.png" height="330" alt="Live transfers" />
+      <br/><sub><b>Live transfers — multi-connection progress, speed & ETA</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/files-upload-dock.png" height="330" alt="Uploading with live dock" />
+      <br/><sub><b>Uploads — progress dock + live cross-device activity</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/devices-qr.png" height="330" alt="Devices and QR pairing" />
+      <br/><sub><b>Devices — QR pairing with expiring one-time codes</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="docs/screenshots/arabic-dashboard.png" height="400" alt="Arabic RTL interface" />
+      <br/><sub><b>العربية — full RTL Arabic interface, perfectly mirrored</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="docs/screenshots/mobile-drawer.png" height="480" alt="Mobile drawer" />
+      <br/><sub><b>Mobile — slide-over sidebar drawer on small screens</b></sub>
+    </td>
+  </tr>
+</table>
+
+---
+
 ## 🆕 What's New | أحدث التحسينات
 
 LocalDock has gone through a full series of professional upgrade rounds. Here is what each round delivered:
@@ -65,6 +117,7 @@ LocalDock has gone through a full series of professional upgrade rounds. Here is
 | **v6.1 — Mobile Layout Overhaul** | A slide-over **sidebar drawer** replaces the bottom bar; horizontal overflow eliminated on every screen. |
 | **v6.2 — Zero-Config Networking** | LocalDock **registers its own Windows Firewall inbound rules** at server start — no manual setup. |
 | **v6.3 — Hardened Auth** | Paired companion devices are consistently authorized on system, shares, devices, and activity routes. |
+| **v7 — Android Companion App** | A native, serverless Android app: LAN host discovery (mDNS + TCP sweep), 6-character pairing, and the full product in a native shell — built in 10 languages, shipped via CI (APK + AAB). |
 
 ---
 
@@ -86,6 +139,7 @@ LocalDock has gone through a full series of professional upgrade rounds. Here is
 | 🌐 **Static Website Hosting** | Host HTML/CSS/JS websites directly from any directory under `localdock.local/sites/{slug}`. | **استضافة مواقع ثابتة:** استضف مواقع الويب فوراً لجميع أجهزة الشبكة. |
 | 🔗 **Smart LAN URLs** | Share links and QR codes automatically resolve to the LAN address proven reachable on your network. | **روابط شبكة ذكية:** روابط المشاركة تُبنى تلقائياً على عنوان الـ IP المحلي الصحيح. |
 | 🖥️ **Windows Desktop Shell** | Native Tauri v2 app with System Tray, auto-start on boot, mDNS discovery, and **automatic Firewall rules**. | **تطبيق مكتبي متكامل لويندوز:** شريط مهام، بدء تلقائي، اكتشاف mDNS، وقواعد جدار حماية تلقائية. |
+| 📵 **Android Companion App** | Native serverless app: auto-discovers servers (mDNS + TCP sweep), pairs with a 6-character code, opens the full product — in 10 languages. | **تطبيق رفيق لأندرويد:** اكتشاف تلقائي للخوادم، اقتران برمز من 6 أحرف، وواجهة المنتج كاملة داخل غلاف أصلي. |
 
 ---
 
@@ -264,6 +318,22 @@ bun run build:windows
 The resulting installer is generated at:
 `src-tauri/target/release/bundle/nsis/LocalDock_1.0.0_x64-setup.exe`
 
+### 4. Android Companion App
+
+The Android app is a native, serverless companion: it discovers LocalDock servers on your Wi-Fi, pairs with a code, and opens the full product UI.
+
+Requirements: [Rust](https://rustup.rs) with Android targets, JDK 17, Android SDK + NDK. See [`docs/ANDROID_APP.md`](docs/ANDROID_APP.md) for the full guide.
+
+```bash
+# One-time: generate icons + Android project + LAN manifest patch
+bun run android:init
+
+# Build installable APKs (aarch64 · armv7 · x86_64)
+bun run android:build
+```
+
+Signed APKs are also produced automatically by CI (`android-build.yml`) on every version tag.
+
 ---
 
 ## 📱 Pairing Mobile Devices | ربط الهواتف والأجهزة
@@ -316,7 +386,7 @@ Deeper documentation lives in the [`docs/`](docs/) folder (written in Arabic):
 * **Desktop Shell:** [Tauri v2](https://tauri.app/) (Rust 2021 edition)
 * **Local Networking:** mDNS / DNS-SD (`mdns-sd`), WebSocket / Server-Sent polling
 * **Runtime:** [Node.js 22 LTS](https://nodejs.org/) & [Bun](https://bun.sh/)
-* **Packaging & CI:** NSIS x64, GitHub Actions (`windows-build.yml`)
+* **Packaging & CI:** NSIS x64, Tauri Android (APK / AAB), GitHub Actions (`windows-build.yml`, `android-build.yml`)
 
 ---
 

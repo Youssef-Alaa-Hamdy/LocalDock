@@ -11,10 +11,11 @@
 [![Next.js 16](https://img.shields.io/badge/Next.js-16%20(Turbopack)-black?logo=next.js&logoColor=white)](https://nextjs.org/)
 [![Languages](https://img.shields.io/badge/لغات%20الواجهة-10%20%7C%20RTL-E4405F?logo=googletranslate&logoColor=white)](#-التعريب-العالمي)
 [![Themes](https://img.shields.io/badge/الثيمات-4%20%C3%97%20فاتح%2Fداكن-8B5CF6?logo=palettor)](#-الثيمات)
+[![Android](https://img.shields.io/badge/أندرويد-تطبيق%20رفيق-3DDC84?logo=android&logoColor=black)](docs/ANDROID_APP.md)
 [![Local-First](https://img.shields.io/badge/المعمارية-محلي%20100%25-22c55e?logo=shield)](https://github.com/Youssef-Alaa-Hamdy/LocalDock)
 [![License: MIT](https://img.shields.io/badge/الترخيص-MIT-blue.svg)](LICENSE)
 
-[🇬🇧 English — Full Version](README.md) • [العربية](#-نظرة-عامة) • [أحدث التحسينات](#-أحدث-التحسينات) • [المميزات](#-أبرز-المميزات) • [محرك النقل](#-محرك-النقل) • [الأمان](#-الأمان-والخصوصية) • [Releases](https://github.com/Youssef-Alaa-Hamdy/LocalDock/releases)
+[🇬🇧 English — Full Version](README.md) • [العربية](#-نظرة-عامة) • [لقطات الشاشة](#-لقطات-الشاشة) • [أحدث التحسينات](#-أحدث-التحسينات) • [المميزات](#-أبرز-المميزات) • [محرك النقل](#-محرك-النقل) • [الأمان](#-الأمان-والخصوصية) • [Releases](https://github.com/Youssef-Alaa-Hamdy/LocalDock/releases)
 
 ---
 
@@ -36,6 +37,57 @@
 
 ---
 
+## 📸 لقطات الشاشة
+
+لقطات حقيقية من LocalDock أثناء عمله على الجهاز المضيف — كل شاشة أدناه متوفرة في التطبيق اليوم، بـ**الثيمات الفاتحة والداكنة**، و**10 لغات**، وتجاوب كامل مع كل المقاسات.
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/dashboard-light.png" height="330" alt="لوحة التحكم — الثيم الفاتح" />
+      <br/><sub><b>لوحة التحكم — نظرة حية وإجراءات سريعة وسجل نشاط</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/files-dark.png" height="330" alt="متصفح الملفات — الثيم الداكن" />
+      <br/><sub><b>متصفح الملفات — شبكة مصغّرات مولّدة من الخادم (داكن)</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/preview-modal.png" height="330" alt="معاينة الوسائط" />
+      <br/><sub><b>معاينة الوسائط — تكبير وتدوير وعدّاد وتحقق SHA-256</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/transfers-live.png" height="330" alt="النقل الحي" />
+      <br/><sub><b>النقل الحي — تقدم متعدد الاتصالات مع السرعة والوقت المتبقي</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/files-upload-dock.png" height="330" alt="رفع مع شريط تقدم حي" />
+      <br/><sub><b>الرفع — شريط تقدم حي ونشاط مباشر عبر كل الأجهزة</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshots/devices-qr.png" height="330" alt="الأجهزة واقتران QR" />
+      <br/><sub><b>الأجهزة — اقتران QR برموز أحادية الاستخدام منتهية الصلاحية</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="docs/screenshots/arabic-dashboard.png" height="400" alt="الواجهة العربية RTL" />
+      <br/><sub><b>الواجهة العربية — دعم RTL كامل بانعكاس تام للاتجاه</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="docs/screenshots/mobile-drawer.png" height="480" alt="درج الجوال" />
+      <br/><sub><b>الجوال — درج جانبي منسدل على الشاشات الصغيرة</b></sub>
+    </td>
+  </tr>
+</table>
+
+---
+
 ## 🆕 أحدث التحسينات
 
 مرّ المشروع بسلسلة كاملة من جولات التحسين الاحترافية. إليك ما أضافته كل جولة:
@@ -51,6 +103,7 @@
 | **v6.1 — إعادة بناء تخطيط الجوال** | **درج جانبي منسدل** يحل محل الشريط السفلي؛ إزالة أي تجاوز أفقي على كل الشاشات. |
 | **v6.2 — شبكة بلا إعدادات** | LocalDock **يسجّل قواعد جدار حماية ويندوز تلقائياً** عند تشغيل السيرفر — بلا أي خطوات يدوية. |
 | **v6.3 — تعزيز المصادقة** | توحيد تصريح الأجهزة المرافقة على مسارات النظام والمشاركات والأجهزة والنشاط — بلا فجوات صلاحيات. |
+| **v7 — تطبيق رفيق لأندرويد** | تطبيق أصلي بلا خادم: اكتشاف الخوادم على الشبكة (mDNS + مسح TCP)، اقتران برمز من 6 أحرف، والمنتج كامل داخل غلاف أصلي — بعشر لغات ويُبنى تلقائياً في CI ‏(APK + AAB). |
 
 ---
 
@@ -72,6 +125,7 @@
 | 🌐 **استضافة مواقع ثابتة** | استضف مواقع HTML/CSS/JS من أي مجلد تحت `localdock.local/sites/{slug}` مباشرة. |
 | 🔗 **روابط شبكة ذكية** | روابط المشاركة ورموز QR تُبنى تلقائياً على العنوان المحلي المُثبت أنه يعمل على شبكتك. |
 | 🖥️ **تطبيق مكتبي متكامل لويندوز** | تطبيق Tauri v2 أصلي: شريط مهام (Tray)، بدء تلقائي مع النظام، اكتشاف mDNS، و**قواعد جدار حماية تلقائية**. |
+| 📵 **تطبيق رفيق لأندرويد** | تطبيق أصلي بلا خادم: يكتشف الخوادم تلقائياً (mDNS + مسح TCP)، يقترن برمز من 6 أحرف، ويفتح المنتج كاملاً — بعشر لغات. |
 
 ---
 
@@ -250,6 +304,22 @@ bun run build:windows
 يُولَّد المثبِّت في المسار:
 `src-tauri/target/release/bundle/nsis/LocalDock_1.0.0_x64-setup.exe`
 
+### 4. تطبيق الأندرويد المرافق
+
+تطبيق أندرويد أصلي بلا خادم: يكتشف خوادم LocalDock على شبكتك، يقترن برمز، ثم يفتح واجهة المنتج كاملة.
+
+المتطلبات: ‏[Rust](https://rustup.rs) مع أهداف الأندرويد، ‏JDK 17، ‏Android SDK + NDK. الدليل الكامل في [`docs/ANDROID_APP.md`](docs/ANDROID_APP.md).
+
+```bash
+# مرة واحدة: توليد الأيقونات + مشروع الأندرويد + رقعة الشبكة المحلية
+bun run android:init
+
+# بناء APKs قابلة للتثبيت (aarch64 · armv7 · x86_64)
+bun run android:build
+```
+
+وتُبنى ملفات APK الموقّعة تلقائياً في CI ‏(`android-build.yml`) مع كل وسم إصدار.
+
 ---
 
 ## 📱 ربط الهواتف والأجهزة
@@ -302,7 +372,7 @@ LocalDock مبني بنموذج أمني صارم **«الآمن افتراضي�
 * **القشرة المكتبية:** [Tauri v2](https://tauri.app/) ‏(Rust إصدار 2021)
 * **الشبكة المحلية:** mDNS / DNS-SD ‏(`mdns-sd`)، WebSocket / استقصاء Server-Sent
 * **بيئة التشغيل:** [Node.js 22 LTS](https://nodejs.org/) و[Bun](https://bun.sh/)
-* **الحزم و CI:** ‏NSIS x64، ‏GitHub Actions ‏(`windows-build.yml`)
+* **الحزم و CI:** ‏NSIS x64، ‏Tauri Android ‏(APK / AAB)، ‏GitHub Actions ‏(`windows-build.yml`، `android-build.yml`)
 
 ---
 

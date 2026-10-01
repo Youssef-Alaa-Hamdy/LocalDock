@@ -59,6 +59,6 @@ server.log
 
 # Tauri build artifacts & prepared resources
 /src-tauri/target/
-/src-tauri/gen/schemas/
+/src-tauri/gen/
 /src-tauri/resources/server/
 /src-tauri/resources/bin/node.exe
